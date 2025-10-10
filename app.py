@@ -10,7 +10,7 @@ st.set_page_config(
 )
 
 # --- Título Principal ---
-st.title("📊 Seu Analista de Dados com IA")
+st.title("📊 Mercury EOOOOOOO")
 st.write("Faça o upload de um arquivo CSV ou XLSX na barra lateral e comece a fazer perguntas!")
 
 # --- Configuração da API Key ---
