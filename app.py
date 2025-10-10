@@ -14,8 +14,8 @@ except Exception as e:
     st.error("Chave de API do Google não configurada. Por favor, adicione-a aos segredos do seu app no Streamlit.")
     st.stop() # Interrompe a execução se a chave não for encontrada
 
-# --- Inicialização do Modelo e do Chat ---
-model = genai.GenerativeModel('gemini-pro')
+# Linha final e correta ✅
+model = genai.GenerativeModel('gemini-pro-latest')
 
 # Inicializa o histórico do chat na sessão do Streamlit
 if "chat" not in st.session_state:
