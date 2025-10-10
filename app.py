@@ -4,7 +4,7 @@ import pandas as pd
 
 st.set_page_config(page_title="Seu Analista de Dados com IA", page_icon="📊", layout="wide")
 
-st.title("📊 Seu Analista de Dados com IA")
+st.title("📊 Mercuryu EEEEEEEEEO")
 st.write("Converse comigo ou faça o upload de um arquivo na barra lateral para começar a analisar!")
 
 try:
@@ -40,7 +40,6 @@ if "chat" not in st.session_state:
 if st.session_state.dataframe is not None:
     df = st.session_state.dataframe
     st.header("Dashboard do Arquivo")
-    # ... (código do dashboard continua o mesmo)
     col1, col2, col3 = st.columns(3)
     col1.metric("Total de Linhas", f"{df.shape[0]:,}".replace(",", "."), "linhas")
     col2.metric("Total de Colunas", f"{df.shape[1]}", "colunas")
@@ -93,22 +92,26 @@ if prompt := st.chat_input("Converse com a IA ou faça uma pergunta sobre seus d
             if erro:
                 st.error(erro)
                 response_text = "Desculpe, não consegui analisar os dados. Tente uma pergunta mais simples."
-                response_container.markdown(response_text)
             else:
                 if isinstance(resultado_analise, (pd.Series, pd.DataFrame)) and len(resultado_analise) > 1:
                     with response_container:
                         st.write("Aqui está uma visualização para sua pergunta:")
                         st.bar_chart(resultado_analise)
-                        if len(resultado_analise) > 20:
-                            contexto_para_ia = f"Os 10 primeiros resultados são:\n{resultado_analise.head(10).to_string()}"
-                        else:
-                            contexto_para_ia = resultado_analise.to_string()
-                        prompt_final = f"""A pergunta foi: "{prompt}". Um gráfico foi exibido com os dados: {contexto_para_ia}. Escreva uma breve análise do gráfico."""
+                        
+                        # --- AQUI ESTÁ A CORREÇÃO DEFINITIVA ---
+                        # Criamos um resumo inteligente em vez de enviar a tabela
+                        try:
+                            total_items = len(resultado_analise)
+                            top_item_name = resultado_analise.index[0]
+                            top_item_value = resultado_analise.iloc[0]
+                            contexto_para_ia = f"O gráfico mostra um total de {total_items} itens. O item com o maior valor é '{top_item_name}' com {top_item_value} ordens."
+                        except Exception:
+                            contexto_para_ia = "Um gráfico foi gerado."
+
+                        prompt_final = f"""A pergunta do usuário foi: "{prompt}". Um gráfico de barras já foi exibido na tela. Com base no seguinte resumo dos dados, escreva uma breve análise amigável para o usuário: {contexto_para_ia}"""
                 else:
-                    prompt_final = f"""A pergunta foi: "{prompt}". O resultado da análise foi: {resultado_analise}. Formule uma resposta amigável e direta."""
+                    prompt_final = f"""A pergunta foi: "{prompt}". O resultado da análise dos dados foi: {resultado_analise}. Formule uma resposta amigável e direta."""
                 
-                # --- AQUI ESTÁ A CORREÇÃO ---
-                # Usamos uma chamada direta à IA, sem adicionar o histórico da conversa
                 response = genai.GenerativeModel('gemini-pro-latest').generate_content(prompt_final)
                 response_text = response.text
                 response_container.markdown(response_text)
@@ -119,5 +122,4 @@ if prompt := st.chat_input("Converse com a IA ou faça uma pergunta sobre seus d
         with st.chat_message("assistant"):
             st.markdown(response_text)
 
-    # Adiciona a resposta final ao histórico para exibição
     st.session_state.chat.history.append({'role': 'model', 'parts': [{'text': response_text}]})
