@@ -4,14 +4,14 @@ import pandas as pd
 
 # Configura o título da página, layout e um ícone
 st.set_page_config(
-    page_title="Seu Analista de Dados com IA",
+    page_title="Mercury IA",
     page_icon="📊",
-    layout="wide"  # Usa a largura total da página
+    layout="wide"
 )
 
 # --- Título Principal ---
 st.title("📊 Seu Analista de Dados com IA")
-st.write("Faça o upload de um arquivo CSV na barra lateral e comece a fazer perguntas!")
+st.write("Faça o upload de um arquivo CSV ou XLSX na barra lateral e comece a fazer perguntas!")
 
 # --- Configuração da API Key ---
 try:
@@ -23,23 +23,33 @@ except Exception as e:
 # --- Barra Lateral para Upload ---
 with st.sidebar:
     st.header("Adicionar Conhecimento")
-    uploaded_file = st.sidebar.file_uploader("Faça o upload de um arquivo CSV", type=["csv"])
+    # --- ALTERAÇÃO 1: Aceita arquivos .xlsx ---
+    uploaded_file = st.sidebar.file_uploader(
+        "Faça o upload de um arquivo CSV ou XLSX", 
+        type=["csv", "xlsx"]
+    )
 
     if 'dataframe' not in st.session_state:
         st.session_state.dataframe = None
 
     if uploaded_file is not None:
         try:
-            # Tenta ler o CSV com diferentes configurações
-            st.session_state.dataframe = pd.read_csv(uploaded_file, encoding='latin-1', sep=';')
+            # --- ALTERAÇÃO 2: Lógica para ler CSV ou XLSX ---
+            if uploaded_file.name.endswith('.csv'):
+                # Tenta ler o CSV com diferentes separadores
+                try:
+                    df = pd.read_csv(uploaded_file, encoding='latin-1', sep=';')
+                except Exception:
+                    uploaded_file.seek(0)
+                    df = pd.read_csv(uploaded_file, encoding='latin-1', sep=',')
+            elif uploaded_file.name.endswith('.xlsx'):
+                # Usa pd.read_excel para arquivos Excel
+                df = pd.read_excel(uploaded_file, engine='openpyxl')
+            
+            st.session_state.dataframe = df
             st.success("Arquivo carregado com sucesso!")
-        except Exception:
-            try:
-                uploaded_file.seek(0)
-                st.session_state.dataframe = pd.read_csv(uploaded_file, encoding='latin-1', sep=',')
-                st.success("Arquivo carregado com sucesso!")
-            except Exception as e2:
-                st.error(f"Erro ao ler o arquivo: {e2}")
+        except Exception as e:
+            st.error(f"Erro ao ler o arquivo: {e}")
     
     # Adiciona um botão para limpar o arquivo e o chat
     if st.button("Limpar Arquivo e Chat"):
@@ -48,6 +58,8 @@ with st.sidebar:
         st.rerun()
 
 # --- Corpo Principal da Aplicação ---
+# (O restante do código permanece o mesmo)
+
 # Inicialização do Modelo e do Chat
 model = genai.GenerativeModel('gemini-pro-latest')
 if "chat" not in st.session_state:
@@ -62,9 +74,10 @@ if st.session_state.dataframe is not None:
     col1.metric("Total de Linhas", f"{df.shape[0]:,}".replace(",", "."), "linhas")
     col2.metric("Total de Colunas", f"{df.shape[1]}", "colunas")
     
-    # Calcula o número de clientes únicos, se a coluna existir
-    if 'ClienteNome' in df.columns:
-        clientes_unicos = df['ClienteNome'].nunique()
+    # Tenta encontrar uma coluna de cliente para a métrica
+    coluna_cliente = next((col for col in df.columns if 'cliente' in col.lower()), None)
+    if coluna_cliente:
+        clientes_unicos = df[coluna_cliente].nunique()
         col3.metric("Clientes Únicos", f"{clientes_unicos}", "clientes")
     
     with st.expander("Clique aqui para ver a pré-visualização dos dados"):
@@ -115,7 +128,7 @@ if prompt := st.chat_input("Faça uma pergunta sobre seus dados..."):
             response = st.session_state.chat.send_message(prompt_final)
             response_text = response.text
     else:
-        response_text = "Por favor, carregue um arquivo CSV na barra lateral para começar a análise."
+        response_text = "Por favor, carregue um arquivo CSV ou XLSX na barra lateral para começar a análise."
 
     with st.chat_message("assistant"):
         st.markdown(response_text)
