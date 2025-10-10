@@ -10,8 +10,8 @@ st.set_page_config(
 )
 
 # --- Título Principal ---
-st.title("📊 Mercury EOOOOOOO")
-st.write("Faça o upload de um arquivo CSV ou XLSX na barra lateral e comece a fazer perguntas!")
+st.title("📊 Mercury EEEEEEEEO")
+st.write("Converse comigo ou faça o upload de um arquivo na barra lateral para começar a analisar!")
 
 # --- Configuração da API Key ---
 try:
@@ -66,13 +66,13 @@ if st.session_state.dataframe is not None:
         st.dataframe(df)
     st.header("Converse com seus Dados")
 
+# Exibição do Histórico da Conversa
 for message in st.session_state.chat.history:
     role = "assistant" if message.role == 'model' else message.role
     with st.chat_message(role):
         st.markdown(message.parts[0].text)
 
 def executar_analise_pandas(df, pergunta):
-    # --- ALTERAÇÃO PRINCIPAL: Instruções ainda mais claras e novo exemplo ---
     prompt_engenharia = f"""
     Você é um assistente especialista em Python e Pandas. Sua tarefa é converter uma pergunta em uma única linha de código Pandas que a responda.
     O dataframe está na variável `df`.
@@ -89,7 +89,7 @@ def executar_analise_pandas(df, pergunta):
     Pergunta do usuário: "{pergunta}"
     
     Baseado na pergunta e nas REGRAS, gere apenas a linha de código Pandas necessária.
-    Exemplos de aplicação das regras:
+    Exemplos:
     - Pergunta: "top 3 cidades com ordens realizadas" -> Resposta: df[df['Status'] == 'Realizada'].groupby('Cidade Agendamento').size().nlargest(3)
     - Pergunta: "qual a soma do valor de deslocamento para ordens não realizadas?" -> Resposta: df[df['Status'] == 'Nao Realizada']['Valor Deslocamento'].sum()
     """
@@ -101,41 +101,43 @@ def executar_analise_pandas(df, pergunta):
     except Exception as e:
         return None, f"Ocorreu um erro ao executar a análise: {e}"
 
-if prompt := st.chat_input("Faça uma pergunta sobre seus dados..."):
+if prompt := st.chat_input("Converse com a IA ou faça uma pergunta sobre seus dados..."):
+    # Exibe a mensagem do usuário imediatamente
     with st.chat_message("user"):
         st.markdown(prompt)
     
+    # Decide qual modo usar: Analista de Dados ou Chatbot Geral
     if st.session_state.dataframe is not None:
+        # --- Modo Analista de Dados ---
         resultado_analise, erro = executar_analise_pandas(st.session_state.dataframe, prompt)
         
         if erro:
             st.error(erro)
             response_text = "Desculpe, não consegui analisar os dados. Tente uma pergunta mais simples ou verifique o arquivo."
-            st.session_state.chat.history.append({'role': 'assistant', 'parts': [{'text': response_text}]})
+            # Exibe a resposta de erro
             with st.chat_message("assistant"):
                 st.markdown(response_text)
+            # Adiciona ao histórico para não sumir
+            st.session_state.chat.history.append({'role': 'user', 'parts': [{'text': prompt}]})
+            st.session_state.chat.history.append({'role': 'assistant', 'parts': [{'text': response_text}]})
         else:
+            # Resposta com base na análise
             response_container = st.chat_message("assistant")
             with response_container:
                 if isinstance(resultado_analise, (pd.Series, pd.DataFrame)) and len(resultado_analise) > 1:
                     st.write("Aqui está uma visualização para sua pergunta:")
                     st.bar_chart(resultado_analise)
-                    prompt_final = f"""
-                    A pergunta do usuário foi: "{prompt}"
-                    Para responder, um gráfico de barras já foi exibido na tela. Os dados são: {resultado_analise.to_string()}
-                    Sua tarefa é escrever uma breve análise do gráfico. Não liste os dados novamente. Apenas interprete as informações.
-                    """
+                    prompt_final = f"""A pergunta do usuário foi: "{prompt}". Para responder, um gráfico de barras já foi exibido na tela. Os dados são: {resultado_analise.to_string()}. Sua tarefa é escrever uma breve análise do gráfico. Não liste os dados novamente."""
                 else:
-                    prompt_final = f"""
-                    A pergunta foi: "{prompt}"
-                    O resultado da análise dos dados foi: {resultado_analise}
-                    Com base nesse resultado, formule uma resposta amigável, direta e clara para o usuário.
-                    """
+                    prompt_final = f"""A pergunta foi: "{prompt}". O resultado da análise dos dados foi: {resultado_analise}. Com base nesse resultado, formule uma resposta amigável e direta."""
                 
-                response = st.session_state.chat.send_message(prompt_final)
+                response = st.session_state.chat.send_message([prompt, response_container.markdown(f"Analisando os dados...")])
                 response_text = response.text
-                st.markdown(response_text)
+                response_container.markdown(response_text)
     else:
-        response_text = "Por favor, carregue um arquivo CSV ou XLSX na barra lateral para começar a análise."
+        # --- Modo Chatbot Geral (CORREÇÃO) ---
+        # Se nenhum arquivo for carregado, apenas converse normalmente
+        response = st.session_state.chat.send_message(prompt)
+        response_text = response.text
         with st.chat_message("assistant"):
             st.markdown(response_text)
