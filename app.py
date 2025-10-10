@@ -22,9 +22,9 @@ uploaded_file = st.sidebar.file_uploader("Faça o upload de um arquivo CSV", typ
 dataframe = None
 if uploaded_file is not None:
     try:
-        # --- AQUI ESTÁ A CORREÇÃO ---
-        # Adicionamos o encoding='latin-1' para ler arquivos com acentuação
-        dataframe = pd.read_csv(uploaded_file, encoding='latin-1')
+        # --- AQUI ESTÁ A CORREÇÃO FINAL ---
+        # Adicionamos sep=';' para arquivos CSV do Excel (padrão Brasil)
+        dataframe = pd.read_csv(uploaded_file, encoding='latin-1', sep=';')
         
         st.sidebar.success("Arquivo carregado com sucesso!")
         # Exibe as 5 primeiras linhas do arquivo na barra lateral
@@ -51,9 +51,12 @@ if prompt := st.chat_input("Digite sua mensagem..."):
     
     # Se um arquivo foi carregado, adicione o conteúdo dele ao prompt
     if dataframe is not None:
-        contexto = dataframe.to_string()
+        # Remove colunas que só contenham valores nulos (NaN) para limpar os dados
+        dataframe_limpo = dataframe.dropna(axis=1, how='all')
+        contexto = dataframe_limpo.to_string()
+        
         prompt_com_contexto = f"""
-        Baseado nos seguintes dados de uma planilha:
+        Com base nos seguintes dados de uma planilha:
         ---
         {contexto}
         ---
