@@ -2,26 +2,34 @@ import streamlit as st
 import google.generativeai as genai
 import pandas as pd
 
+# --- Configuração da Página ---
 st.set_page_config(page_title="Seu Analista de Dados com IA", page_icon="📊", layout="wide")
 
+# --- Título ---
 st.title("📊 Seu Analista de Dados com IA")
 st.write("Converse comigo ou faça o upload de um arquivo na barra lateral para começar a analisar!")
 
+# --- Configuração da API e do Modelo ---
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+    model = genai.GenerativeModel('gemini-pro-latest')
 except Exception as e:
-    st.error("Chave de API do Google não configurada.")
+    st.error("Chave de API do Google não configurada ou inválida.")
     st.stop()
 
-# --- AQUI ESTÁ A CORREÇÃO ---
-# Definimos o modelo aqui no início, antes de qualquer parte que possa usá-lo.
-model = genai.GenerativeModel('gemini-pro-latest')
+# --- Inicialização do Estado da Sessão ---
+if "chat" not in st.session_state:
+    st.session_state.chat = model.start_chat(history=[])
+if "display_history" not in st.session_state:
+    st.session_state.display_history = []
+if 'dataframe' not in st.session_state:
+    st.session_state.dataframe = None
 
+# --- Barra Lateral ---
 with st.sidebar:
     st.header("Adicionar Conhecimento")
     uploaded_file = st.sidebar.file_uploader("Faça o upload de um arquivo CSV ou XLSX", type=["csv", "xlsx"])
-    if 'dataframe' not in st.session_state:
-        st.session_state.dataframe = None
+    
     if uploaded_file is not None:
         try:
             if uploaded_file.name.endswith('.csv'):
@@ -32,16 +40,14 @@ with st.sidebar:
             st.success("Arquivo carregado!")
         except Exception as e:
             st.error(f"Erro ao ler o arquivo: {e}")
-            
+
     if st.button("Limpar Arquivo e Chat"):
         st.session_state.dataframe = None
-        # Agora o 'model' já existe e esta linha funciona.
         st.session_state.chat = model.start_chat(history=[])
+        st.session_state.display_history = []
         st.rerun()
 
-if "chat" not in st.session_state:
-    st.session_state.chat = model.start_chat(history=[])
-
+# --- Dashboard (se houver arquivo) ---
 if st.session_state.dataframe is not None:
     df = st.session_state.dataframe
     st.header("Dashboard do Arquivo")
@@ -56,21 +62,18 @@ if st.session_state.dataframe is not None:
         st.dataframe(df)
     st.header("Converse com seus Dados")
 
-for message in st.session_state.chat.history:
-    role = "assistant" if message.role == 'model' else 'user'
-    with st.chat_message(role):
-        st.markdown(message.parts[0].text)
+# --- Exibição do Histórico Visual ---
+for message in st.session_state.display_history:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
+# --- Funções de Análise e Chat ---
 def executar_analise_pandas(df, pergunta):
     prompt_engenharia = f"""
     Sua tarefa é converter uma pergunta em uma única linha de código Pandas que a responda.
-    O dataframe está na variável `df`.
-    Primeiras linhas do dataframe: {df.head().to_string()}
-    REGRAS OBRIGATÓRIAS:
-    1. A coluna 'Status' contém: 'Agendada', 'Realizada', 'Nao Realizada', 'Reagendamento'.
-    2. Se a pergunta contiver "agendadas", "realizadas", etc., você DEVE filtrar o dataframe por essa coluna ANTES de qualquer outra operação.
-    Pergunta do usuário: "{pergunta}"
-    Baseado nas REGRAS, gere apenas a linha de código Pandas necessária.
+    O dataframe é `df`. As colunas relevantes sobre status são na coluna 'Status'.
+    Pergunta: "{pergunta}"
+    Gere apenas a linha de código Pandas.
     """
     try:
         code_response = genai.GenerativeModel('gemini-pro-latest').generate_content(prompt_engenharia)
@@ -80,43 +83,38 @@ def executar_analise_pandas(df, pergunta):
     except Exception as e:
         return None, f"Ocorreu um erro ao executar a análise: {e}"
 
+# --- Lógica de Entrada do Usuário ---
 if prompt := st.chat_input("Converse com a IA ou faça uma pergunta sobre seus dados..."):
+    # Adiciona a mensagem do usuário ao histórico visual
+    st.session_state.display_history.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
-    st.session_state.chat.history.append({'role': 'user', 'parts': [{'text': prompt}]})
 
+    # Decide o modo de operação
     if st.session_state.dataframe is not None:
-        response_container = st.chat_message("assistant")
-        with response_container:
-            st.markdown("Analisando os dados...")
-            resultado_analise, erro = executar_analise_pandas(st.session_state.dataframe, prompt)
-        
-            if erro:
-                st.error(erro)
-                response_text = "Desculpe, não consegui analisar os dados. Tente uma pergunta mais simples."
-            else:
-                if isinstance(resultado_analise, (pd.Series, pd.DataFrame)) and len(resultado_analise) > 1:
-                    with response_container:
+        # --- Modo Analista (Sem Memória de Conversa) ---
+        with st.chat_message("assistant"):
+            with st.spinner("Analisando os dados..."):
+                resultado_analise, erro = executar_analise_pandas(st.session_state.dataframe, prompt)
+                
+                if erro:
+                    st.error(erro)
+                    response_text = "Desculpe, não consegui analisar os dados. Tente uma pergunta mais simples."
+                else:
+                    if isinstance(resultado_analise, (pd.Series, pd.DataFrame)) and len(resultado_analise) > 1:
                         st.write("Aqui está uma visualização para sua pergunta:")
                         st.bar_chart(resultado_analise)
-                        try:
-                            total_items = len(resultado_analise)
-                            top_item_name = resultado_analise.index[0]
-                            top_item_value = resultado_analise.iloc[0]
-                            contexto_para_ia = f"O gráfico mostra um total de {total_items} itens. O item com o maior valor é '{top_item_name}' com {top_item_value}."
-                        except Exception:
-                            contexto_para_ia = "Um gráfico foi gerado."
-                        prompt_final = f"""A pergunta foi: "{prompt}". Um gráfico já foi exibido. Com base no resumo dos dados a seguir, escreva uma breve análise amigável: {contexto_para_ia}"""
-                else:
-                    prompt_final = f"""A pergunta foi: "{prompt}". O resultado da análise foi: {resultado_analise}. Formule uma resposta amigável e direta."""
+                        response_text = "Gráfico gerado com sucesso acima!"
+                    else:
+                        response_text = f"O resultado da sua análise é: **{resultado_analise}**"
                 
-                response = genai.GenerativeModel('gemini-pro-latest').generate_content(prompt_final)
-                response_text = response.text
-                response_container.markdown(response_text)
+                st.markdown(response_text)
+        st.session_state.display_history.append({"role": "assistant", "content": response_text})
     else:
-        response = st.session_state.chat.send_message(prompt)
-        response_text = response.text
+        # --- Modo Chatbot (Com Memória de Conversa) ---
         with st.chat_message("assistant"):
-            st.markdown(response_text)
-
-    st.session_state.chat.history.append({'role': 'model', 'parts': [{'text': response_text}]})
+            with st.spinner("Pensando..."):
+                response = st.session_state.chat.send_message(prompt)
+                response_text = response.text
+                st.markdown(response_text)
+        st.session_state.display_history.append({"role": "assistant", "content": response_text})
