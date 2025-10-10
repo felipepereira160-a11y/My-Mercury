@@ -4,7 +4,7 @@ import pandas as pd
 
 st.set_page_config(page_title="Seu Analista de Dados com IA", page_icon="📊", layout="wide")
 
-st.title("📊 Mercuryu EEEEEEEEEO")
+st.title("📊 Seu Analista de Dados com IA")
 st.write("Converse comigo ou faça o upload de um arquivo na barra lateral para começar a analisar!")
 
 try:
@@ -58,7 +58,7 @@ for message in st.session_state.chat.history:
 
 def executar_analise_pandas(df, pergunta):
     prompt_engenharia = f"""
-    Você é um assistente especialista em Python e Pandas. Sua tarefa é converter uma pergunta em uma única linha de código Pandas que a responda.
+    Sua tarefa é converter uma pergunta em uma única linha de código Pandas que a responda.
     O dataframe está na variável `df`.
     Primeiras linhas do dataframe: {df.head().to_string()}
     REGRAS OBRIGATÓRIAS:
@@ -66,9 +66,6 @@ def executar_analise_pandas(df, pergunta):
     2. Se a pergunta contiver "agendadas", "realizadas", etc., você DEVE filtrar o dataframe por essa coluna ANTES de qualquer outra operação.
     Pergunta do usuário: "{pergunta}"
     Baseado nas REGRAS, gere apenas a linha de código Pandas necessária.
-    Exemplos:
-    - "top 3 cidades com ordens realizadas" -> df[df['Status'] == 'Realizada'].groupby('Cidade Agendamento').size().nlargest(3)
-    - "soma do valor de deslocamento para ordens não realizadas" -> df[df['Status'] == 'Nao Realizada']['Valor Deslocamento'].sum()
     """
     try:
         code_response = genai.GenerativeModel('gemini-pro-latest').generate_content(prompt_engenharia)
@@ -93,33 +90,22 @@ if prompt := st.chat_input("Converse com a IA ou faça uma pergunta sobre seus d
                 st.error(erro)
                 response_text = "Desculpe, não consegui analisar os dados. Tente uma pergunta mais simples."
             else:
+                # --- AQUI ESTÁ A OTIMIZAÇÃO ---
+                # Removemos a segunda chamada à API e formatamos a resposta diretamente
                 if isinstance(resultado_analise, (pd.Series, pd.DataFrame)) and len(resultado_analise) > 1:
-                    with response_container:
-                        st.write("Aqui está uma visualização para sua pergunta:")
-                        st.bar_chart(resultado_analise)
-                        
-                        # --- AQUI ESTÁ A CORREÇÃO DEFINITIVA ---
-                        # Criamos um resumo inteligente em vez de enviar a tabela
-                        try:
-                            total_items = len(resultado_analise)
-                            top_item_name = resultado_analise.index[0]
-                            top_item_value = resultado_analise.iloc[0]
-                            contexto_para_ia = f"O gráfico mostra um total de {total_items} itens. O item com o maior valor é '{top_item_name}' com {top_item_value} ordens."
-                        except Exception:
-                            contexto_para_ia = "Um gráfico foi gerado."
-
-                        prompt_final = f"""A pergunta do usuário foi: "{prompt}". Um gráfico de barras já foi exibido na tela. Com base no seguinte resumo dos dados, escreva uma breve análise amigável para o usuário: {contexto_para_ia}"""
+                    st.write("Aqui está um gráfico para sua pergunta:")
+                    st.bar_chart(resultado_analise)
+                    response_text = "Gráfico gerado com sucesso acima!"
                 else:
-                    prompt_final = f"""A pergunta foi: "{prompt}". O resultado da análise dos dados foi: {resultado_analise}. Formule uma resposta amigável e direta."""
-                
-                response = genai.GenerativeModel('gemini-pro-latest').generate_content(prompt_final)
-                response_text = response.text
-                response_container.markdown(response_text)
+                    response_text = f"O resultado da sua análise é: **{resultado_analise}**"
+            
+            response_container.markdown(response_text)
     else:
-        # Modo Chatbot Geral usa o histórico
+        # Modo Chatbot Geral (usa 1 chamada à API)
         response = st.session_state.chat.send_message(prompt)
         response_text = response.text
         with st.chat_message("assistant"):
             st.markdown(response_text)
 
+    # Adiciona a resposta final ao histórico para exibição
     st.session_state.chat.history.append({'role': 'model', 'parts': [{'text': response_text}]})
