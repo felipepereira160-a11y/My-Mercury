@@ -10,7 +10,7 @@ st.set_page_config(
 )
 
 # --- Título Principal ---
-st.title("📊 Mercury EEEEEEEEO")
+st.title("📊 Mercury EEEEEEO")
 st.write("Converse comigo ou faça o upload de um arquivo na barra lateral para começar a analisar!")
 
 # --- Configuração da API Key ---
@@ -109,21 +109,17 @@ if prompt := st.chat_input("Converse com a IA ou faça uma pergunta sobre seus d
     # Decide qual modo usar: Analista de Dados ou Chatbot Geral
     if st.session_state.dataframe is not None:
         # --- Modo Analista de Dados ---
-        resultado_analise, erro = executar_analise_pandas(st.session_state.dataframe, prompt)
+        response_container = st.chat_message("assistant")
+        with response_container:
+            st.markdown("Analisando os dados...")
+            resultado_analise, erro = executar_analise_pandas(st.session_state.dataframe, prompt)
         
-        if erro:
-            st.error(erro)
-            response_text = "Desculpe, não consegui analisar os dados. Tente uma pergunta mais simples ou verifique o arquivo."
-            # Exibe a resposta de erro
-            with st.chat_message("assistant"):
-                st.markdown(response_text)
-            # Adiciona ao histórico para não sumir
-            st.session_state.chat.history.append({'role': 'user', 'parts': [{'text': prompt}]})
-            st.session_state.chat.history.append({'role': 'assistant', 'parts': [{'text': response_text}]})
-        else:
-            # Resposta com base na análise
-            response_container = st.chat_message("assistant")
-            with response_container:
+            if erro:
+                st.error(erro)
+                response_text = "Desculpe, não consegui analisar os dados. Tente uma pergunta mais simples ou verifique o arquivo."
+                response_container.markdown(response_text)
+            else:
+                # --- AQUI ESTÁ A CORREÇÃO ---
                 if isinstance(resultado_analise, (pd.Series, pd.DataFrame)) and len(resultado_analise) > 1:
                     st.write("Aqui está uma visualização para sua pergunta:")
                     st.bar_chart(resultado_analise)
@@ -131,13 +127,11 @@ if prompt := st.chat_input("Converse com a IA ou faça uma pergunta sobre seus d
                 else:
                     prompt_final = f"""A pergunta foi: "{prompt}". O resultado da análise dos dados foi: {resultado_analise}. Com base nesse resultado, formule uma resposta amigável e direta."""
                 
-                response = st.session_state.chat.send_message([prompt, response_container.markdown(f"Analisando os dados...")])
-                response_text = response.text
-                response_container.markdown(response_text)
+                # Envia apenas o prompt de texto para a API
+                response = st.session_state.chat.send_message(prompt_final)
+                response_container.markdown(response.text)
     else:
-        # --- Modo Chatbot Geral (CORREÇÃO) ---
-        # Se nenhum arquivo for carregado, apenas converse normalmente
+        # --- Modo Chatbot Geral ---
         response = st.session_state.chat.send_message(prompt)
-        response_text = response.text
         with st.chat_message("assistant"):
-            st.markdown(response_text)
+            st.markdown(response.text)
