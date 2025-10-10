@@ -12,9 +12,10 @@ try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 except Exception as e:
     st.error("Chave de API do Google não configurada. Por favor, adicione-a aos segredos do seu app no Streamlit.")
-    st.stop() # Interrompe a execução se a chave não for encontrada
+    st.stop()
 
-# Linha final e correta ✅
+# --- Inicialização do Modelo e do Chat ---
+# Usando o nome de modelo correto e estável para seu plano
 model = genai.GenerativeModel('gemini-pro-latest')
 
 # Inicializa o histórico do chat na sessão do Streamlit
