@@ -10,7 +10,7 @@ st.set_page_config(
 )
 
 # --- Título Principal ---
-st.title("📊 Mercury Fk")
+st.title("📊 Mercury EOOOOO")
 st.write("Faça o upload de um arquivo CSV ou XLSX na barra lateral e comece a fazer perguntas!")
 
 # --- Configuração da API Key ---
@@ -72,18 +72,22 @@ for message in st.session_state.chat.history:
         st.markdown(message.parts[0].text)
 
 def executar_analise_pandas(df, pergunta):
-    # --- ALTERAÇÃO 1: Adicionando dicas para a IA ---
+    # --- ALTERAÇÃO PRINCIPAL: Instruções mais claras para a IA ---
     prompt_engenharia = f"""
     Você é um assistente especialista em Python e Pandas. Sua tarefa é converter uma pergunta em uma única linha de código Pandas que a responda.
     O dataframe está na variável `df`.
     Aqui estão as primeiras linhas do dataframe: {df.head().to_string()}
 
-    DICAS IMPORTANTES:
-    - Se a pergunta for sobre ordens "Agendadas", "Realizadas", "Reagendadas" ou "Não realizadas", você deve filtrar a coluna 'Status' pelos valores correspondentes (ex: 'Agendada', 'Realizada', etc.).
+    REGRAS OBRIGATÓRIAS:
+    1. A coluna 'Status' contém os seguintes valores principais: 'Agendada', 'Realizada', 'Nao Realizada', 'Reagendamento'.
+    2. Se a pergunta do usuário contiver as palavras "agendadas", "agendamento" ou similares, você DEVE filtrar o dataframe para `df['Status'] == 'Agendada'` ANTES de qualquer outra operação.
+    3. Se a pergunta contiver "realizadas", filtre por `df['Status'] == 'Realizada'`. Se contiver "reagendadas", filtre por `df['Status'] == 'Reagendamento'`, e assim por diante.
 
     Pergunta do usuário: "{pergunta}"
     
-    Baseado na pergunta e nas dicas, gere apenas a linha de código Pandas necessária. Se a pergunta pedir um gráfico, gere o código que calcula os dados para o gráfico (ex: value_counts()).
+    Baseado na pergunta e nas REGRAS, gere apenas a linha de código Pandas necessária.
+    Exemplo de aplicação da regra:
+    - Pergunta: "top 3 cidades com ordens realizadas" -> Resposta: df[df['Status'] == 'Realizada'].groupby('Cidade Agendamento').size().nlargest(3)
     """
     try:
         code_response = genai.GenerativeModel('gemini-pro-latest').generate_content(prompt_engenharia)
@@ -110,17 +114,13 @@ if prompt := st.chat_input("Faça uma pergunta sobre seus dados..."):
         else:
             response_container = st.chat_message("assistant")
             with response_container:
-                # --- ALTERAÇÃO 2: Lógica aprimorada para exibir gráficos ---
                 if isinstance(resultado_analise, (pd.Series, pd.DataFrame)) and len(resultado_analise) > 1:
                     st.write("Aqui está uma visualização para sua pergunta:")
                     st.bar_chart(resultado_analise)
                     prompt_final = f"""
                     A pergunta do usuário foi: "{prompt}"
-                    Para responder, um gráfico de barras já foi exibido na tela mostrando os dados a seguir:
-                    ---
-                    {resultado_analise.to_string()}
-                    ---
-                    Sua tarefa é apenas escrever uma breve análise ou um resumo do que o gráfico está mostrando. Não liste os dados novamente. Apenas interprete as informações de forma amigável. Por exemplo: 'O gráfico mostra que a cidade com mais agendamentos é X, seguida por Y.'
+                    Para responder, um gráfico de barras já foi exibido na tela mostrando os dados a seguir: {resultado_analise.to_string()}
+                    Sua tarefa é apenas escrever uma breve análise ou um resumo do que o gráfico está mostrando. Não liste os dados novamente. Apenas interprete as informações de forma amigável.
                     """
                 else:
                     prompt_final = f"""
