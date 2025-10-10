@@ -13,6 +13,10 @@ except Exception as e:
     st.error("Chave de API do Google não configurada.")
     st.stop()
 
+# --- AQUI ESTÁ A CORREÇÃO ---
+# Definimos o modelo aqui no início, antes de qualquer parte que possa usá-lo.
+model = genai.GenerativeModel('gemini-pro-latest')
+
 with st.sidebar:
     st.header("Adicionar Conhecimento")
     uploaded_file = st.sidebar.file_uploader("Faça o upload de um arquivo CSV ou XLSX", type=["csv", "xlsx"])
@@ -28,12 +32,13 @@ with st.sidebar:
             st.success("Arquivo carregado!")
         except Exception as e:
             st.error(f"Erro ao ler o arquivo: {e}")
+            
     if st.button("Limpar Arquivo e Chat"):
         st.session_state.dataframe = None
+        # Agora o 'model' já existe e esta linha funciona.
         st.session_state.chat = model.start_chat(history=[])
         st.rerun()
 
-model = genai.GenerativeModel('gemini-pro-latest')
 if "chat" not in st.session_state:
     st.session_state.chat = model.start_chat(history=[])
 
@@ -90,22 +95,28 @@ if prompt := st.chat_input("Converse com a IA ou faça uma pergunta sobre seus d
                 st.error(erro)
                 response_text = "Desculpe, não consegui analisar os dados. Tente uma pergunta mais simples."
             else:
-                # --- AQUI ESTÁ A OTIMIZAÇÃO ---
-                # Removemos a segunda chamada à API e formatamos a resposta diretamente
                 if isinstance(resultado_analise, (pd.Series, pd.DataFrame)) and len(resultado_analise) > 1:
-                    st.write("Aqui está um gráfico para sua pergunta:")
-                    st.bar_chart(resultado_analise)
-                    response_text = "Gráfico gerado com sucesso acima!"
+                    with response_container:
+                        st.write("Aqui está uma visualização para sua pergunta:")
+                        st.bar_chart(resultado_analise)
+                        try:
+                            total_items = len(resultado_analise)
+                            top_item_name = resultado_analise.index[0]
+                            top_item_value = resultado_analise.iloc[0]
+                            contexto_para_ia = f"O gráfico mostra um total de {total_items} itens. O item com o maior valor é '{top_item_name}' com {top_item_value}."
+                        except Exception:
+                            contexto_para_ia = "Um gráfico foi gerado."
+                        prompt_final = f"""A pergunta foi: "{prompt}". Um gráfico já foi exibido. Com base no resumo dos dados a seguir, escreva uma breve análise amigável: {contexto_para_ia}"""
                 else:
-                    response_text = f"O resultado da sua análise é: **{resultado_analise}**"
-            
-            response_container.markdown(response_text)
+                    prompt_final = f"""A pergunta foi: "{prompt}". O resultado da análise foi: {resultado_analise}. Formule uma resposta amigável e direta."""
+                
+                response = genai.GenerativeModel('gemini-pro-latest').generate_content(prompt_final)
+                response_text = response.text
+                response_container.markdown(response_text)
     else:
-        # Modo Chatbot Geral (usa 1 chamada à API)
         response = st.session_state.chat.send_message(prompt)
         response_text = response.text
         with st.chat_message("assistant"):
             st.markdown(response_text)
 
-    # Adiciona a resposta final ao histórico para exibição
     st.session_state.chat.history.append({'role': 'model', 'parts': [{'text': response_text}]})
