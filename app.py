@@ -29,7 +29,13 @@ if uploaded_file is not None:
         st.session_state.dataframe = pd.read_csv(uploaded_file, encoding='latin-1', sep=';')
         st.sidebar.success("Arquivo carregado com sucesso!")
     except Exception as e:
-        st.sidebar.error(f"Erro ao ler o arquivo: {e}")
+        # Tenta ler com vírgula como separador se o ponto e vírgula falhar
+        try:
+            uploaded_file.seek(0) # Volta ao início do arquivo para tentar ler de novo
+            st.session_state.dataframe = pd.read_csv(uploaded_file, encoding='latin-1', sep=',')
+            st.sidebar.success("Arquivo carregado com sucesso!")
+        except Exception as e2:
+            st.sidebar.error(f"Erro ao ler o arquivo: {e2}")
 
 if st.session_state.dataframe is not None:
     st.sidebar.write("Pré-visualização dos Dados:")
@@ -44,7 +50,6 @@ if "chat" not in st.session_state:
 def executar_analise_pandas(df, pergunta):
     """Usa o Gemini para converter uma pergunta em código Pandas e executá-lo."""
     
-    # Prompt para o Gemini gerar o código
     prompt_engenharia = f"""
     Você é um assistente especialista em Python e Pandas. Sua tarefa é converter uma pergunta em uma única linha de código Pandas que a responda.
     O dataframe está na variável `df`.
@@ -62,14 +67,17 @@ def executar_analise_pandas(df, pergunta):
     """
     
     try:
-        # Gera o código Pandas com o Gemini
         code_response = genai.GenerativeModel('gemini-pro-latest').generate_content(prompt_engenharia)
-        codigo_pandas = code_response.text.strip().replace('`', '')
+        
+        # --- AQUI ESTÁ A CORREÇÃO ---
+        # Limpa o código recebido da IA antes de executar
+        codigo_pandas = code_response.text.strip()
+        codigo_pandas = codigo_pandas.replace('`', '')
+        if codigo_pandas.lower().startswith('python'):
+            codigo_pandas = codigo_pandas[6:].strip()
         
         st.info(f"Código Pandas gerado pela IA: `{codigo_pandas}`")
         
-        # Executa o código gerado
-        # ATENÇÃO: eval() é poderoso mas pode ser um risco de segurança se o código não for controlado.
         resultado = eval(codigo_pandas, {'df': df, 'pd': pd})
         return resultado, None
     except Exception as e:
@@ -86,7 +94,6 @@ if prompt := st.chat_input("Faça uma pergunta sobre seus dados..."):
     with st.chat_message("user"):
         st.markdown(prompt)
     
-    # Se um arquivo foi carregado, tenta a análise com Pandas
     if st.session_state.dataframe is not None:
         resultado_analise, erro = executar_analise_pandas(st.session_state.dataframe, prompt)
         
@@ -94,7 +101,6 @@ if prompt := st.chat_input("Faça uma pergunta sobre seus dados..."):
             st.error(erro)
             response_text = "Desculpe, não consegui analisar os dados. Tente uma pergunta mais simples ou verifique o arquivo."
         else:
-            # Envia o resultado da análise para o Gemini formatar a resposta
             prompt_final = f"""
             A seguinte pergunta foi feita sobre uma planilha: "{prompt}"
             Uma análise nos dados foi executada e o resultado foi:
@@ -106,7 +112,6 @@ if prompt := st.chat_input("Faça uma pergunta sobre seus dados..."):
             response = st.session_state.chat.send_message(prompt_final)
             response_text = response.text
     else:
-        # Se não houver arquivo, funciona como um chatbot normal
         response = st.session_state.chat.send_message(prompt)
         response_text = response.text
 
