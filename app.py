@@ -10,7 +10,7 @@ st.set_page_config(
 )
 
 # --- Título Principal ---
-st.title("📊 Mercury EOOOOO")
+st.title("📊 Mercury EOOOOOOO")
 st.write("Faça o upload de um arquivo CSV ou XLSX na barra lateral e comece a fazer perguntas!")
 
 # --- Configuração da API Key ---
@@ -72,22 +72,26 @@ for message in st.session_state.chat.history:
         st.markdown(message.parts[0].text)
 
 def executar_analise_pandas(df, pergunta):
-    # --- ALTERAÇÃO PRINCIPAL: Instruções mais claras para a IA ---
+    # --- ALTERAÇÃO PRINCIPAL: Instruções ainda mais claras e novo exemplo ---
     prompt_engenharia = f"""
     Você é um assistente especialista em Python e Pandas. Sua tarefa é converter uma pergunta em uma única linha de código Pandas que a responda.
     O dataframe está na variável `df`.
     Aqui estão as primeiras linhas do dataframe: {df.head().to_string()}
 
-    REGRAS OBRIGATÓRIAS:
-    1. A coluna 'Status' contém os seguintes valores principais: 'Agendada', 'Realizada', 'Nao Realizada', 'Reagendamento'.
-    2. Se a pergunta do usuário contiver as palavras "agendadas", "agendamento" ou similares, você DEVE filtrar o dataframe para `df['Status'] == 'Agendada'` ANTES de qualquer outra operação.
-    3. Se a pergunta contiver "realizadas", filtre por `df['Status'] == 'Realizada'`. Se contiver "reagendadas", filtre por `df['Status'] == 'Reagendamento'`, e assim por diante.
+    REGRAS DE EXECUÇÃO (SIGA EM ORDEM):
+    1. PRIMEIRO, verifique se a pergunta exige um filtro na coluna 'Status'. As palavras-chave são "agendadas", "realizadas", "não realizadas", "reagendadas".
+       - "agendadas" -> `df['Status'] == 'Agendada'`
+       - "realizadas" -> `df['Status'] == 'Realizada'`
+       - "não realizadas" -> `df['Status'] == 'Nao Realizada'`
+       - "reagendadas" -> `df['Status'] == 'Reagendamento'`
+    2. SEGUNDO, aplique a operação principal (contar, somar, agrupar, etc.) ao dataframe JÁ FILTRADO (se a regra 1 se aplicar).
 
     Pergunta do usuário: "{pergunta}"
     
     Baseado na pergunta e nas REGRAS, gere apenas a linha de código Pandas necessária.
-    Exemplo de aplicação da regra:
+    Exemplos de aplicação das regras:
     - Pergunta: "top 3 cidades com ordens realizadas" -> Resposta: df[df['Status'] == 'Realizada'].groupby('Cidade Agendamento').size().nlargest(3)
+    - Pergunta: "qual a soma do valor de deslocamento para ordens não realizadas?" -> Resposta: df[df['Status'] == 'Nao Realizada']['Valor Deslocamento'].sum()
     """
     try:
         code_response = genai.GenerativeModel('gemini-pro-latest').generate_content(prompt_engenharia)
@@ -107,7 +111,6 @@ if prompt := st.chat_input("Faça uma pergunta sobre seus dados..."):
         if erro:
             st.error(erro)
             response_text = "Desculpe, não consegui analisar os dados. Tente uma pergunta mais simples ou verifique o arquivo."
-            # Adiciona a mensagem de erro ao histórico para exibição
             st.session_state.chat.history.append({'role': 'assistant', 'parts': [{'text': response_text}]})
             with st.chat_message("assistant"):
                 st.markdown(response_text)
@@ -119,8 +122,8 @@ if prompt := st.chat_input("Faça uma pergunta sobre seus dados..."):
                     st.bar_chart(resultado_analise)
                     prompt_final = f"""
                     A pergunta do usuário foi: "{prompt}"
-                    Para responder, um gráfico de barras já foi exibido na tela mostrando os dados a seguir: {resultado_analise.to_string()}
-                    Sua tarefa é apenas escrever uma breve análise ou um resumo do que o gráfico está mostrando. Não liste os dados novamente. Apenas interprete as informações de forma amigável.
+                    Para responder, um gráfico de barras já foi exibido na tela. Os dados são: {resultado_analise.to_string()}
+                    Sua tarefa é escrever uma breve análise do gráfico. Não liste os dados novamente. Apenas interprete as informações.
                     """
                 else:
                     prompt_final = f"""
@@ -132,7 +135,6 @@ if prompt := st.chat_input("Faça uma pergunta sobre seus dados..."):
                 response = st.session_state.chat.send_message(prompt_final)
                 response_text = response.text
                 st.markdown(response_text)
-
     else:
         response_text = "Por favor, carregue um arquivo CSV ou XLSX na barra lateral para começar a análise."
         with st.chat_message("assistant"):
