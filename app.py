@@ -10,7 +10,7 @@ st.title("Meu Chatbot Pessoal 🤖")
 
 # --- Configuração da API Key ---
 try:
-    genai.configure(api_key=st.secrets["AIzaSyDkY8aeZro8jgjUv4p-p2e-CNH4d7thWts"])
+    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 except Exception as e:
     st.error("Chave de API do Google não configurada. Por favor, adicione-a aos segredos do seu app no Streamlit.")
     st.stop()
