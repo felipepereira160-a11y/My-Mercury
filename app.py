@@ -10,7 +10,7 @@ st.set_page_config(
 )
 
 # --- Título Principal ---
-st.title("📊 Mercury EEEEEEO")
+st.title("📊 Mercury EEEEEEEEO")
 st.write("Converse comigo ou faça o upload de um arquivo na barra lateral para começar a analisar!")
 
 # --- Configuração da API Key ---
@@ -77,7 +77,6 @@ def executar_analise_pandas(df, pergunta):
     Você é um assistente especialista em Python e Pandas. Sua tarefa é converter uma pergunta em uma única linha de código Pandas que a responda.
     O dataframe está na variável `df`.
     Aqui estão as primeiras linhas do dataframe: {df.head().to_string()}
-
     REGRAS DE EXECUÇÃO (SIGA EM ORDEM):
     1. PRIMEIRO, verifique se a pergunta exige um filtro na coluna 'Status'. As palavras-chave são "agendadas", "realizadas", "não realizadas", "reagendadas".
        - "agendadas" -> `df['Status'] == 'Agendada'`
@@ -85,9 +84,7 @@ def executar_analise_pandas(df, pergunta):
        - "não realizadas" -> `df['Status'] == 'Nao Realizada'`
        - "reagendadas" -> `df['Status'] == 'Reagendamento'`
     2. SEGUNDO, aplique a operação principal (contar, somar, agrupar, etc.) ao dataframe JÁ FILTRADO (se a regra 1 se aplicar).
-
     Pergunta do usuário: "{pergunta}"
-    
     Baseado na pergunta e nas REGRAS, gere apenas a linha de código Pandas necessária.
     Exemplos:
     - Pergunta: "top 3 cidades com ordens realizadas" -> Resposta: df[df['Status'] == 'Realizada'].groupby('Cidade Agendamento').size().nlargest(3)
@@ -102,13 +99,10 @@ def executar_analise_pandas(df, pergunta):
         return None, f"Ocorreu um erro ao executar a análise: {e}"
 
 if prompt := st.chat_input("Converse com a IA ou faça uma pergunta sobre seus dados..."):
-    # Exibe a mensagem do usuário imediatamente
     with st.chat_message("user"):
         st.markdown(prompt)
     
-    # Decide qual modo usar: Analista de Dados ou Chatbot Geral
     if st.session_state.dataframe is not None:
-        # --- Modo Analista de Dados ---
         response_container = st.chat_message("assistant")
         with response_container:
             st.markdown("Analisando os dados...")
@@ -119,19 +113,24 @@ if prompt := st.chat_input("Converse com a IA ou faça uma pergunta sobre seus d
                 response_text = "Desculpe, não consegui analisar os dados. Tente uma pergunta mais simples ou verifique o arquivo."
                 response_container.markdown(response_text)
             else:
-                # --- AQUI ESTÁ A CORREÇÃO ---
                 if isinstance(resultado_analise, (pd.Series, pd.DataFrame)) and len(resultado_analise) > 1:
                     st.write("Aqui está uma visualização para sua pergunta:")
                     st.bar_chart(resultado_analise)
-                    prompt_final = f"""A pergunta do usuário foi: "{prompt}". Para responder, um gráfico de barras já foi exibido na tela. Os dados são: {resultado_analise.to_string()}. Sua tarefa é escrever uma breve análise do gráfico. Não liste os dados novamente."""
+                    
+                    # --- AQUI ESTÁ A CORREÇÃO ---
+                    # Se o resultado for muito grande, envia apenas um resumo para a IA
+                    if len(resultado_analise) > 20:
+                        contexto_para_ia = f"Os 10 primeiros resultados são:\n{resultado_analise.head(10).to_string()}\n\nOs 5 últimos resultados são:\n{resultado_analise.tail(5).to_string()}"
+                    else:
+                        contexto_para_ia = resultado_analise.to_string()
+
+                    prompt_final = f"""A pergunta do usuário foi: "{prompt}". Um gráfico já foi exibido. Os dados resumidos são: {contexto_para_ia}. Sua tarefa é escrever uma breve análise do gráfico. Não liste os dados novamente."""
                 else:
                     prompt_final = f"""A pergunta foi: "{prompt}". O resultado da análise dos dados foi: {resultado_analise}. Com base nesse resultado, formule uma resposta amigável e direta."""
                 
-                # Envia apenas o prompt de texto para a API
                 response = st.session_state.chat.send_message(prompt_final)
                 response_container.markdown(response.text)
     else:
-        # --- Modo Chatbot Geral ---
         response = st.session_state.chat.send_message(prompt)
         with st.chat_message("assistant"):
             st.markdown(response.text)
