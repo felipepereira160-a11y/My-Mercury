@@ -4,13 +4,13 @@ import pandas as pd
 
 # Configura o título da página, layout e um ícone
 st.set_page_config(
-    page_title="Mercury IA",
+    page_title="Seu Analista de Dados com IA",
     page_icon="📊",
     layout="wide"
 )
 
 # --- Título Principal ---
-st.title("📊 Mercury EOOOOOOO")
+st.title("📊 Mercury Fk")
 st.write("Faça o upload de um arquivo CSV ou XLSX na barra lateral e comece a fazer perguntas!")
 
 # --- Configuração da API Key ---
@@ -23,7 +23,6 @@ except Exception as e:
 # --- Barra Lateral para Upload ---
 with st.sidebar:
     st.header("Adicionar Conhecimento")
-    # --- ALTERAÇÃO 1: Aceita arquivos .xlsx ---
     uploaded_file = st.sidebar.file_uploader(
         "Faça o upload de um arquivo CSV ou XLSX", 
         type=["csv", "xlsx"]
@@ -34,71 +33,57 @@ with st.sidebar:
 
     if uploaded_file is not None:
         try:
-            # --- ALTERAÇÃO 2: Lógica para ler CSV ou XLSX ---
             if uploaded_file.name.endswith('.csv'):
-                # Tenta ler o CSV com diferentes separadores
-                try:
-                    df = pd.read_csv(uploaded_file, encoding='latin-1', sep=';')
-                except Exception:
-                    uploaded_file.seek(0)
-                    df = pd.read_csv(uploaded_file, encoding='latin-1', sep=',')
+                df = pd.read_csv(uploaded_file, encoding='latin-1', sep=';', on_bad_lines='skip')
             elif uploaded_file.name.endswith('.xlsx'):
-                # Usa pd.read_excel para arquivos Excel
                 df = pd.read_excel(uploaded_file, engine='openpyxl')
-            
             st.session_state.dataframe = df
             st.success("Arquivo carregado com sucesso!")
         except Exception as e:
             st.error(f"Erro ao ler o arquivo: {e}")
     
-    # Adiciona um botão para limpar o arquivo e o chat
     if st.button("Limpar Arquivo e Chat"):
         st.session_state.dataframe = None
         st.session_state.chat = model.start_chat(history=[])
         st.rerun()
 
 # --- Corpo Principal da Aplicação ---
-# (O restante do código permanece o mesmo)
-
-# Inicialização do Modelo e do Chat
 model = genai.GenerativeModel('gemini-pro-latest')
 if "chat" not in st.session_state:
     st.session_state.chat = model.start_chat(history=[])
 
-# Se um arquivo foi carregado, mostra o dashboard e o chat
 if st.session_state.dataframe is not None:
     df = st.session_state.dataframe
-    
     st.header("Dashboard do Arquivo")
     col1, col2, col3 = st.columns(3)
     col1.metric("Total de Linhas", f"{df.shape[0]:,}".replace(",", "."), "linhas")
     col2.metric("Total de Colunas", f"{df.shape[1]}", "colunas")
-    
-    # Tenta encontrar uma coluna de cliente para a métrica
     coluna_cliente = next((col for col in df.columns if 'cliente' in col.lower()), None)
     if coluna_cliente:
         clientes_unicos = df[coluna_cliente].nunique()
         col3.metric("Clientes Únicos", f"{clientes_unicos}", "clientes")
-    
     with st.expander("Clique aqui para ver a pré-visualização dos dados"):
         st.dataframe(df)
-    
     st.header("Converse com seus Dados")
 
-# Exibição do Histórico da Conversa
 for message in st.session_state.chat.history:
     role = "assistant" if message.role == 'model' else message.role
     with st.chat_message(role):
         st.markdown(message.parts[0].text)
 
-# --- Função para gerar e executar código Pandas ---
 def executar_analise_pandas(df, pergunta):
+    # --- ALTERAÇÃO 1: Adicionando dicas para a IA ---
     prompt_engenharia = f"""
     Você é um assistente especialista em Python e Pandas. Sua tarefa é converter uma pergunta em uma única linha de código Pandas que a responda.
     O dataframe está na variável `df`.
-    Aqui estão as primeiras linhas do dataframe para referência das colunas: {df.head().to_string()}
+    Aqui estão as primeiras linhas do dataframe: {df.head().to_string()}
+
+    DICAS IMPORTANTES:
+    - Se a pergunta for sobre ordens "Agendadas", "Realizadas", "Reagendadas" ou "Não realizadas", você deve filtrar a coluna 'Status' pelos valores correspondentes (ex: 'Agendada', 'Realizada', etc.).
+
     Pergunta do usuário: "{pergunta}"
-    Baseado na pergunta, gere apenas a linha de código Pandas necessária.
+    
+    Baseado na pergunta e nas dicas, gere apenas a linha de código Pandas necessária. Se a pergunta pedir um gráfico, gere o código que calcula os dados para o gráfico (ex: value_counts()).
     """
     try:
         code_response = genai.GenerativeModel('gemini-pro-latest').generate_content(prompt_engenharia)
@@ -108,7 +93,6 @@ def executar_analise_pandas(df, pergunta):
     except Exception as e:
         return None, f"Ocorreu um erro ao executar a análise: {e}"
 
-# --- Entrada do Usuário ---
 if prompt := st.chat_input("Faça uma pergunta sobre seus dados..."):
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -119,16 +103,37 @@ if prompt := st.chat_input("Faça uma pergunta sobre seus dados..."):
         if erro:
             st.error(erro)
             response_text = "Desculpe, não consegui analisar os dados. Tente uma pergunta mais simples ou verifique o arquivo."
+            # Adiciona a mensagem de erro ao histórico para exibição
+            st.session_state.chat.history.append({'role': 'assistant', 'parts': [{'text': response_text}]})
+            with st.chat_message("assistant"):
+                st.markdown(response_text)
         else:
-            prompt_final = f"""
-            A pergunta foi: "{prompt}"
-            O resultado da análise dos dados foi: {resultado_analise}
-            Com base nesse resultado, formule uma resposta amigável, direta e clara para o usuário.
-            """
-            response = st.session_state.chat.send_message(prompt_final)
-            response_text = response.text
+            response_container = st.chat_message("assistant")
+            with response_container:
+                # --- ALTERAÇÃO 2: Lógica aprimorada para exibir gráficos ---
+                if isinstance(resultado_analise, (pd.Series, pd.DataFrame)) and len(resultado_analise) > 1:
+                    st.write("Aqui está uma visualização para sua pergunta:")
+                    st.bar_chart(resultado_analise)
+                    prompt_final = f"""
+                    A pergunta do usuário foi: "{prompt}"
+                    Para responder, um gráfico de barras já foi exibido na tela mostrando os dados a seguir:
+                    ---
+                    {resultado_analise.to_string()}
+                    ---
+                    Sua tarefa é apenas escrever uma breve análise ou um resumo do que o gráfico está mostrando. Não liste os dados novamente. Apenas interprete as informações de forma amigável. Por exemplo: 'O gráfico mostra que a cidade com mais agendamentos é X, seguida por Y.'
+                    """
+                else:
+                    prompt_final = f"""
+                    A pergunta foi: "{prompt}"
+                    O resultado da análise dos dados foi: {resultado_analise}
+                    Com base nesse resultado, formule uma resposta amigável, direta e clara para o usuário.
+                    """
+                
+                response = st.session_state.chat.send_message(prompt_final)
+                response_text = response.text
+                st.markdown(response_text)
+
     else:
         response_text = "Por favor, carregue um arquivo CSV ou XLSX na barra lateral para começar a análise."
-
-    with st.chat_message("assistant"):
-        st.markdown(response_text)
+        with st.chat_message("assistant"):
+            st.markdown(response_text)
