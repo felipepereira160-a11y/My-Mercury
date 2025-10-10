@@ -22,8 +22,10 @@ uploaded_file = st.sidebar.file_uploader("Faça o upload de um arquivo CSV", typ
 dataframe = None
 if uploaded_file is not None:
     try:
-        # Lê o arquivo CSV para um DataFrame do Pandas
-        dataframe = pd.read_csv(uploaded_file)
+        # --- AQUI ESTÁ A CORREÇÃO ---
+        # Adicionamos o encoding='latin-1' para ler arquivos com acentuação
+        dataframe = pd.read_csv(uploaded_file, encoding='latin-1')
+        
         st.sidebar.success("Arquivo carregado com sucesso!")
         # Exibe as 5 primeiras linhas do arquivo na barra lateral
         st.sidebar.write("Pré-visualização dos Dados:")
