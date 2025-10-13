@@ -1,6 +1,7 @@
 import streamlit as st
 import google.generativeai as genai
 import pandas as pd
+import pydeck as pdk
 import time
 
 # --- Configuração da Página ---
@@ -33,7 +34,6 @@ if 'df_mapeamento' not in st.session_state:
 def executar_analise_pandas(_df_hash, pergunta, df_type):
     df = st.session_state.df_dados if df_type == 'dados' else st.session_state.df_mapeamento
     contexto = "analisar dados de ordens de serviço." if df_type == 'dados' else "buscar informações sobre representantes."
-    
     time.sleep(1)
     prompt_engenharia = f"""
     Sua tarefa é converter uma pergunta em uma única linha de código Pandas para {contexto}
@@ -55,7 +55,7 @@ with st.sidebar:
     map_file = st.file_uploader("1. Upload do Mapeamento (Fixo)", type=["csv", "xlsx"])
     if map_file:
         try:
-            df = pd.read_excel(map_file) if map_file.name.endswith('.xlsx') else pd.read_csv(map_file, encoding='latin-1', sep=';', on_bad_lines='skip')
+            df = pd.read_excel(map_file) if map_file.name.endswith('.xlsx') else pd.read_csv(map_file, encoding='latin-1', sep=',')
             st.session_state.df_mapeamento = df
             st.success("Mapeamento carregado!")
         except Exception as e:
@@ -80,24 +80,52 @@ if st.session_state.df_dados is not None:
     df = st.session_state.df_dados
     st.header("Dashboard dos Dados do Dia")
     # ... (código do dashboard)
-
-    # --- BOTÕES DE ANÁLISE RÁPIDA (Custo Zero) ---
     st.subheader("Análises Frequentes (Custo Zero de IA)")
     b_col1, b_col2, b_col3 = st.columns(3)
     if b_col1.button("Contagem por Status"):
         st.write("Resultado da Análise:")
         st.bar_chart(df['Status'].value_counts())
-    if b_col2.button("Top 5 Cidades (Agendadas)"):
-        st.write("Resultado da Análise:")
-        st.bar_chart(df[df['Status'] == 'Agendada']['Cidade Agendamento'].value_counts().nlargest(5))
-    if b_col3.button("Top 5 Representantes (Agendadas)"):
-        st.write("Resultado da Análise:")
-        st.bar_chart(df[df['Status'] == 'Agendada']['Representante Técnico'].value_counts().nlargest(5))
+    # ... (outros botões)
     st.markdown("---")
 
 
 if st.session_state.df_mapeamento is not None:
     st.success("Base de conhecimento de Representantes está ativa.")
+    
+    # --- NOVO BOTÃO E LÓGICA DO MAPA ---
+    if st.button("Visualizar Mapa de Atendimento"):
+        map_df = st.session_state.df_mapeamento.copy()
+        # Garante que as colunas de coordenadas sejam numéricas
+        map_df['cd_latitude_atendimento'] = pd.to_numeric(map_df['cd_latitude_atendimento'], errors='coerce')
+        map_df['cd_longitude_atendimento'] = pd.to_numeric(map_df['cd_longitude_atendimento'], errors='coerce')
+        # Remove linhas onde a coordenada não é válida
+        map_df.dropna(subset=['cd_latitude_atendimento', 'cd_longitude_atendimento'], inplace=True)
+
+        if not map_df.empty:
+            st.pydeck_chart(pdk.Deck(
+                map_style='mapbox://styles/mapbox/light-v9',
+                initial_view_state=pdk.ViewState(
+                    latitude=map_df['cd_latitude_atendimento'].mean(),
+                    longitude=map_df['cd_longitude_atendimento'].mean(),
+                    zoom=4,
+                    pitch=50,
+                ),
+                layers=[
+                    pdk.Layer(
+                       'HexagonLayer',
+                       data=map_df,
+                       get_position='[cd_longitude_atendimento, cd_latitude_atendimento]',
+                       radius=20000,
+                       elevation_scale=4,
+                       elevation_range=[0, 1000],
+                       pickable=True,
+                       extruded=True,
+                    ),
+                ],
+                tooltip={"text": "{nm_cidade_atendimento}\nRepresentante: {nm_representante}"}
+            ))
+        else:
+            st.warning("Não foram encontradas coordenadas válidas na planilha de mapeamento.")
 
 st.header("Converse com a IA")
 for message in st.session_state.display_history:
@@ -110,10 +138,8 @@ if prompt := st.chat_input("Faça uma pergunta..."):
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Roteador de Custo Zero
     keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
-    
-    df_type = 'chat' # Padrão
+    df_type = 'chat'
     if any(keyword in prompt.lower() for keyword in keywords_mapeamento) and st.session_state.df_mapeamento is not None:
         df_type = 'mapeamento'
     elif st.session_state.df_dados is not None:
@@ -135,7 +161,7 @@ if prompt := st.chat_input("Faça uma pergunta..."):
                     else:
                         response_text = f"O resultado da sua análise é: **{resultado_analise}**"
                 st.markdown(response_text)
-        else: # Modo Chatbot
+        else:
             with st.spinner("Pensando..."):
                 response = st.session_state.chat.send_message(prompt)
                 response_text = response.text
