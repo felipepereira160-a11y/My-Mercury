@@ -1,5 +1,5 @@
 import streamlit as st
-import google-generativeai as genai
+import google.generativeai as genai # <-- ERRO CORRIGIDO AQUI
 import pandas as pd
 from haversine import haversine, Unit
 import time
@@ -50,15 +50,16 @@ def executar_analise_pandas(_df_hash, pergunta, df_type):
 def carregar_dataframe(arquivo):
     """Lê um arquivo CSV ou XLSX de forma robusta."""
     if arquivo.name.endswith('.csv'):
-        try: # Tenta com ponto e vírgula
+        try:
+            arquivo.seek(0)
             df = pd.read_csv(arquivo, encoding='latin-1', sep=';', on_bad_lines='skip')
             if len(df.columns) > 1: return df
         except Exception:
             pass
         arquivo.seek(0)
-        try: # Tenta com vírgula
+        try:
             df = pd.read_csv(arquivo, encoding='latin-1', sep=',', on_bad_lines='skip')
-            return df
+            if len(df.columns) > 1: return df
         except Exception as e:
             raise e
     elif arquivo.name.endswith('.xlsx'):
@@ -90,14 +91,10 @@ with st.sidebar:
         st.rerun()
 
 # --- Corpo Principal ---
-
-# --- OTIMIZADOR DE PROXIMIDADE (VERSÃO APRIMORADA) ---
 if st.session_state.df_dados is not None and st.session_state.df_mapeamento is not None:
-    st.markdown("---")
     with st.expander("🚚 Abrir Otimizador de Proximidade de RT", expanded=True):
         df_dados = st.session_state.df_dados; df_map = st.session_state.df_mapeamento
         
-        # Detecção dinâmica de colunas
         os_id_col = next((col for col in df_dados.columns if 'número da o.s' in col.lower() or 'numeropedido' in col.lower()), None)
         os_cliente_col = next((col for col in df_dados.columns if 'cliente' in col.lower() and 'id' not in col.lower()), None)
         os_date_col = next((col for col in df_dados.columns if 'data agendamento' in col.lower()), None)
@@ -126,7 +123,6 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                     ordens_na_cidade = df_agendadas[df_agendadas[os_city_col] == cidade_selecionada]
                     st.subheader(f"Ordens 'Agendadas' em {cidade_selecionada}:")
                     st.dataframe(ordens_na_cidade[[os_id_col, os_cliente_col, os_date_col, os_rep_col]])
-                    
                     st.subheader(f"Análise de Proximidade para cada Ordem:")
                     cidade_info = df_map[df_map[map_city_col] == cidade_selecionada]
                     if cidade_info.empty:
@@ -136,17 +132,16 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                         distancias = [{'Representante': rt_map[map_rep_col], 'Distancia (km)': haversine((rt_map[map_rep_lat_col], rt_map[map_rep_lon_col]), ponto_atendimento, unit=Unit.KILOMETERS)} for _, rt_map in df_map.iterrows()]
                         df_distancias = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
                         rt_sugerido = df_distancias.loc[df_distancias['Distancia (km)'].idxmin()]
-                        
                         for index, ordem in ordens_na_cidade.iterrows():
                             rt_atual = ordem[os_rep_col]
+                            data_ag = pd.to_datetime(ordem[os_date_col], errors='coerce').strftime('%d/%m/%Y')
                             with st.expander(f"**OS: {ordem[os_id_col]}** | Cliente: {ordem[os_cliente_col]}"):
                                 col1, col2 = st.columns(2)
                                 with col1:
                                     st.info(f"**RT Agendado:** {rt_atual}")
                                     dist_atual_df = df_distancias[df_distancias['Representante'] == rt_atual]
                                     if not dist_atual_df.empty:
-                                        dist_atual = dist_atual_df['Distancia (km)'].values[0]
-                                        st.metric("Distância do RT Agendado", f"{dist_atual:.1f} km")
+                                        dist_atual = dist_atual_df['Distancia (km)'].values[0]; st.metric("Distância do RT Agendado", f"{dist_atual:.1f} km")
                                     else:
                                         st.warning(f"O RT '{rt_atual}' não foi encontrado no Mapeamento."); dist_atual = float('inf')
                                 with col2:
@@ -154,13 +149,9 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                                     economia = dist_atual - rt_sugerido['Distancia (km)']
                                     st.metric("Distância do RT Sugerido", f"{rt_sugerido['Distancia (km)']:.1f} km", delta=f"{economia:.1f} km de economia" if economia > 0 and economia != float('inf') else None)
 
-# --- Seção de Mapeamento (Funcional) ---
-# (O código da consulta interativa e do mapa que já funcionava está aqui)
-
 # --- Seção do Chat de IA ---
 st.markdown("---")
 st.header("💬 Converse com a IA para análises personalizadas")
-# (O resto do seu código de chat permanece o mesmo)
 for message in st.session_state.display_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
