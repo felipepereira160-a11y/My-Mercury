@@ -171,7 +171,7 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
     with st.expander("🚚 Abrir Otimizador de Proximidade de RT"):
         st.header("Otimizador de Proximidade")
         df_dados = st.session_state.df_dados; df_map = st.session_state.df_mapeamento
-        os_id_col, os_date_col, os_city_col, os_rep_col, os_status_col = 'NumeroPedido', 'Data Agendamento', 'Cidade Agendamento', 'Representante Técnico', 'Status'
+        os_id_col, os_date_col, os_city_col, os_rep_col, os_status_col = 'Número da O.S', 'Data Agendamento', 'Cidade Agendamento', 'Representante Técnico', 'Status'
         map_city_col, map_lat_atendimento_col, map_lon_atendimento_col, map_rep_col, map_rep_lat_col, map_rep_lon_col = 'nm_cidade_atendimento', 'cd_latitude_atendimento', 'cd_longitude_atendimento', 'nm_representante', 'cd_latitude_representante', 'cd_longitude_representante'
         
         required_os_cols = [os_id_col, os_date_col, os_city_col, os_rep_col, os_status_col]
