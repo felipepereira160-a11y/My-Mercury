@@ -92,6 +92,7 @@ if st.session_state.df_dados is not None:
         st.bar_chart(df['Status'].value_counts())
     st.markdown("---")
 
+
 if st.session_state.df_mapeamento is not None:
     st.markdown("---")
     st.success("Base de conhecimento de Representantes está ativa.")
@@ -125,17 +126,37 @@ if st.session_state.df_mapeamento is not None:
 
         st.write("Visualização no Mapa:")
         
-        filtered_df[lat_col] = pd.to_numeric(filtered_df[lat_col], errors='coerce')
-        filtered_df[lon_col] = pd.to_numeric(filtered_df[lon_col], errors='coerce')
-        filtered_df.dropna(subset=[lat_col, lon_col], inplace=True)
-        filtered_df = filtered_df.rename(columns={lat_col: 'lat', lon_col: 'lon'})
+        map_data = filtered_df.copy()
+        map_data[lat_col] = pd.to_numeric(map_data[lat_col], errors='coerce')
+        map_data[lon_col] = pd.to_numeric(map_data[lon_col], errors='coerce')
+        map_data.dropna(subset=[lat_col, lon_col], inplace=True)
+        map_data = map_data.rename(columns={lat_col: 'lat', lon_col: 'lon'})
 
-        if not filtered_df.empty:
-            zoom_level = 10 if cidade_selecionada or len(filtered_df) == 1 else 4
+        if not map_data.empty:
+            zoom_level = 10 if cidade_selecionada or len(map_data) == 1 else 3.5
+            
             st.pydeck_chart(pdk.Deck(
-                map_style='mapbox://styles/mapbox/light-v10', # Estilo de mapa que não exige chave
-                initial_view_state=pdk.ViewState(latitude=filtered_df['lat'].mean(), longitude=filtered_df['lon'].mean(), zoom=zoom_level, pitch=45),
-                layers=[pdk.Layer('ScatterplotLayer', data=filtered_df, get_position='[lon, lat]', get_color='[200, 30, 0, 160]', get_radius=15000, pickable=True)],
+                map_style='mapbox://styles/mapbox/light-v10',
+                initial_view_state=pdk.ViewState(
+                    latitude=map_data['lat'].mean(),
+                    longitude=map_data['lon'].mean(),
+                    zoom=zoom_level,
+                    pitch=45,
+                ),
+                layers=[
+                    pdk.Layer(
+                       'ScatterplotLayer',
+                       data=map_data,
+                       get_position='[lon, lat]',
+                       get_fill_color='[255, 0, 0, 180]',
+                       get_line_color='[255, 255, 255, 200]',
+                       get_radius=5000,
+                       pickable=True,
+                       filled=True,
+                       stroked=True,
+                       line_width_min_pixels=1,
+                    ),
+                ],
                 tooltip={"html": f"<b>Cidade:</b> {{{city_col}}}<br/><b>Representante:</b> {{{rep_col}}}<br/><b>Distância:</b> {{{km_col}}} km"}
             ))
         else:
