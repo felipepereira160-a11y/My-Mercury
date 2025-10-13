@@ -1,7 +1,6 @@
 import streamlit as st
 import google.generativeai as genai
 import pandas as pd
-from haversine import haversine, Unit
 import time
 
 # --- Configuração da Página ---
@@ -52,7 +51,7 @@ def executar_analise_pandas(_df_hash, pergunta, df_type):
 # --- Barra Lateral ---
 with st.sidebar:
     st.header("Base de Conhecimento")
-    data_file = st.sidebar.file_uploader("1. Upload de Agendamentos (OS)", type=["csv", "xlsx"])
+    data_file = st.sidebar.file_uploader("1. Upload dos Dados do Dia (OS)", type=["csv", "xlsx"])
     if data_file:
         try:
             if data_file.name.endswith('.csv'):
@@ -60,12 +59,12 @@ with st.sidebar:
             else:
                 df = pd.read_excel(data_file)
             st.session_state.df_dados = df
-            st.success("Agendamentos carregados!")
+            st.success("Dados de OS carregados!")
         except Exception as e:
             st.error(f"Erro nos dados: {e}")
 
     st.markdown("---")
-    map_file = st.sidebar.file_uploader("2. Upload do Mapeamento de RT (Fixo)", type=["csv", "xlsx"])
+    map_file = st.file_uploader("2. Upload do Mapeamento de RT (Fixo)", type=["csv", "xlsx"])
     if map_file:
         try:
             if map_file.name.endswith('.csv'):
@@ -83,76 +82,66 @@ with st.sidebar:
 
 # --- Corpo Principal ---
 
-# --- OTIMIZADOR DE PROXIMIDADE ---
-if st.session_state.df_dados is not None and st.session_state.df_mapeamento is not None:
+# --- SEÇÃO DE DADOS DO DIA (COM DASHBOARD COMPLETO) ---
+if st.session_state.df_dados is not None:
     st.markdown("---")
-    st.header("🚚 Otimizador de Proximidade de RT (Custo Zero)")
+    st.header("📊 Dashboard de Análise de Ordens de Serviço (Custo Zero)")
+    df_dados = st.session_state.df_dados.copy()
     
-    df_dados = st.session_state.df_dados
-    df_map = st.session_state.df_mapeamento
+    # Prepara a coluna de data para o filtro
+    date_col = 'Data Agendamento'
+    if date_col in df_dados.columns:
+        df_dados[date_col] = pd.to_datetime(df_dados[date_col], errors='coerce')
+
+    # Nomes de coluna corretos
+    status_col = 'Status'
+    rep_col_dados = 'Representante Técnico'
+    city_col_dados = 'Cidade Agendamento'
+    motivo_fechamento_col = 'Tipo de Fechamento'
+    cliente_col = 'Cliente'
+
+    st.subheader("Filtros Interativos")
+    f_col1, f_col2, f_col3 = st.columns(3)
     
-    os_city_col = 'Cidade Agendamento'
-    os_rep_col = 'Representante Técnico'
-    os_status_col = 'Status'
+    status_options = sorted(df_dados[status_col].dropna().unique()) if status_col in df_dados.columns else []
+    status_selecionado = f_col1.multiselect("Filtrar por Status:", options=status_options)
     
-    map_city_col = 'nm_cidade_atendimento'
-    map_lat_atendimento_col = 'cd_latitude_atendimento'
-    map_lon_atendimento_col = 'cd_longitude_atendimento'
-    map_rep_col = 'nm_representante'
-    map_rep_lat_col = 'cd_latitude_representante'
-    map_rep_lon_col = 'cd_longitude_representante'
+    rep_options = sorted(df_dados[rep_col_dados].dropna().unique()) if rep_col_dados in df_dados.columns else []
+    rep_selecionado = f_col2.selectbox("Filtrar por Representante:", options=rep_options, index=None, placeholder="Selecione um RT")
+    
+    data_selecionada = f_col3.date_input("Filtrar por Data de Agendamento:", value=None)
 
-    # Verifica se as colunas essenciais existem
-    if not all(col in df_dados.columns for col in [os_city_col, os_rep_col, os_status_col]):
-        st.warning(f"Para usar o otimizador, a planilha de agendamentos precisa ter as colunas essenciais (Cidade Agendamento, Representante Técnico, Status).")
-    elif not all(col in df_map.columns for col in [map_city_col, map_lat_atendimento_col, map_lon_atendimento_col, map_rep_col, map_rep_lat_col, map_rep_lon_col]):
-        st.warning(f"Para usar o otimizador, a planilha de mapeamento precisa ter todas as colunas de cidade e coordenadas.")
-    else:
-        # Filtra apenas as ordens com status 'Agendada'
-        df_agendadas = df_dados[df_dados[os_status_col] == 'Agendada'].copy()
-        
-        if df_agendadas.empty:
-            st.info("Nenhuma ordem com o status 'Agendada' foi encontrada na planilha de dados para otimização.")
-        else:
-            lista_cidades_agendadas = sorted(df_agendadas[os_city_col].dropna().unique())
-            cidade_selecionada = st.selectbox("Selecione uma cidade com agendamentos para otimizar:", options=lista_cidades_agendadas, index=None, placeholder="Escolha uma cidade")
+    # Aplica os filtros
+    filtered_df_dados = df_dados
+    if status_selecionado:
+        filtered_df_dados = filtered_df_dados[filtered_df_dados[status_col].isin(status_selecionado)]
+    if rep_selecionado:
+        filtered_df_dados = filtered_df_dados[filtered_df_dados[rep_col_dados] == rep_selecionado]
+    if data_selecionada:
+        filtered_df_dados = filtered_df_dados[filtered_df_dados[date_col].dt.date == data_selecionada]
 
-            if cidade_selecionada:
-                ordem_selecionada = df_agendadas[df_agendadas[os_city_col] == cidade_selecionada].iloc[0]
-                rt_atual = ordem_selecionada[os_rep_col]
-                
-                # --- LÓGICA DO "CRUZAMENTO INTELIGENTE" ---
-                cidade_info = df_map[df_map[map_city_col] == cidade_selecionada]
-                if cidade_info.empty:
-                    st.error(f"Não foi possível encontrar as coordenadas para a cidade '{cidade_selecionada}' na sua planilha de Mapeamento.")
-                else:
-                    ponto_atendimento = (cidade_info.iloc[0][map_lat_atendimento_col], cidade_info.iloc[0][map_lon_atendimento_col])
+    st.dataframe(filtered_df_dados)
+    st.info(f"Mostrando {len(filtered_df_dados)} resultados.")
 
-                    distancias = []
-                    for _, rt_map in df_map.iterrows():
-                        ponto_base_rt = (rt_map[map_rep_lat_col], rt_map[map_rep_lon_col])
-                        distancia = haversine(ponto_base_rt, ponto_atendimento, unit=Unit.KILOMETERS)
-                        distancias.append({'Representante': rt_map[map_rep_col], 'Distancia (km)': distancia})
-                    
-                    df_distancias = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
-                    rt_sugerido = df_distancias.loc[df_distancias['Distancia (km)'].idxmin()]
-                    
-                    st.subheader(f"Análise de Proximidade para: {cidade_selecionada}")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.info(f"**RT Atualmente Agendado:** {rt_atual}")
-                        dist_atual_df = df_distancias[df_distancias['Representante'] == rt_atual]
-                        if not dist_atual_df.empty:
-                            dist_atual = dist_atual_df['Distancia (km)'].values[0]
-                            st.metric("Distância do RT Agendado", f"{dist_atual:.1f} km")
-                        else:
-                            st.warning(f"O RT '{rt_atual}' não foi encontrado no arquivo de Mapeamento.")
-                            dist_atual = float('inf')
-
-                    with col2:
-                        st.success(f"**Sugestão de RT Mais Próximo:** {rt_sugerido['Representante']}")
-                        economia = dist_atual - rt_sugerido['Distancia (km)']
-                        st.metric("Distância do RT Sugerido", f"{rt_sugerido['Distancia (km)']:.1f} km", delta=f"{economia:.1f} km de economia" if economia > 0 and economia != float('inf') else None)
+    st.subheader("Análises Gráficas (Baseado nos filtros)")
+    b_col1, b_col2 = st.columns(2)
+    with b_col1:
+        st.write("**Top Clientes com Visitas Improdutivas:**")
+        if motivo_fechamento_col in filtered_df_dados.columns and cliente_col in filtered_df_dados.columns:
+            improdutivas_df = filtered_df_dados[filtered_df_dados[motivo_fechamento_col] == 'Visita Improdutiva']
+            if not improdutivas_df.empty:
+                st.bar_chart(improdutivas_df[cliente_col].value_counts().nlargest(10))
+            else:
+                st.info("Nenhuma visita improdutiva encontrada nos dados filtrados.")
+    
+    with b_col2:
+        st.write("**Top RTs com Ordens Realizadas:**")
+        if status_col in filtered_df_dados.columns and rep_col_dados in filtered_df_dados.columns:
+            realizadas_df = filtered_df_dados[filtered_df_dados[status_col] == 'Realizada']
+            if not realizadas_df.empty:
+                st.bar_chart(realizadas_df[rep_col_dados].value_counts().nlargest(10))
+            else:
+                st.info("Nenhuma ordem realizada encontrada nos dados filtrados.")
 
 # --- Seção de Mapeamento (Funcional) ---
 if st.session_state.df_mapeamento is not None:
