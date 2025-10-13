@@ -32,8 +32,22 @@ if 'df_mapeamento' not in st.session_state:
 # --- Funções de Análise (com cache para economia) ---
 @st.cache_data(ttl=3600)
 def executar_analise_pandas(_df_hash, pergunta, df_type):
-    # (O código desta função permanece o mesmo)
-    pass # Omitido para clareza
+    df = st.session_state.df_dados if df_type == 'dados' else st.session_state.df_mapeamento
+    contexto = "analisar dados de ordens de serviço." if df_type == 'dados' else "buscar informações sobre representantes."
+    time.sleep(1)
+    prompt_engenharia = f"""
+    Sua tarefa é converter uma pergunta em uma única linha de código Pandas para {contexto}
+    O dataframe é `df`. As colunas são: {', '.join(df.columns)}.
+    Pergunta: "{pergunta}"
+    Gere apenas a linha de código Pandas.
+    """
+    try:
+        code_response = genai.GenerativeModel('gemini-pro-latest').generate_content(prompt_engenharia)
+        codigo_pandas = code_response.text.strip().replace('`', '').replace('python', '').strip()
+        resultado = eval(codigo_pandas, {'df': df, 'pd': pd})
+        return resultado, None
+    except Exception as e:
+        return None, f"Ocorreu um erro ao executar a análise: {e}"
 
 # --- Barra Lateral ---
 with st.sidebar:
@@ -49,85 +63,122 @@ with st.sidebar:
             st.success("Mapeamento carregado!")
         except Exception as e:
             st.error(f"Erro no mapeamento: {e}")
-    # (O resto do código da barra lateral permanece o mesmo)
+
+    st.markdown("---")
+    data_file = st.sidebar.file_uploader("2. Upload dos Dados do Dia (Variável)", type=["csv", "xlsx"])
+    if data_file:
+        try:
+            if data_file.name.endswith('.csv'):
+                df = pd.read_csv(data_file, encoding='latin-1', sep=';', on_bad_lines='skip')
+            else:
+                df = pd.read_excel(data_file)
+            st.session_state.df_dados = df
+            st.success("Dados carregados!")
+        except Exception as e:
+            st.error(f"Erro nos dados: {e}")
+
+    if st.button("Limpar Tudo"):
+        st.session_state.clear()
+        st.rerun()
 
 # --- Corpo Principal ---
 if st.session_state.df_dados is not None:
-    # (O código do Dashboard de Dados do Dia permanece o mesmo)
-    pass
+    df = st.session_state.df_dados
+    st.header("Dashboard dos Dados do Dia")
+    st.subheader("Análises Frequentes (Custo Zero de IA)")
+    b_col1, b_col2, b_col3 = st.columns(3)
+    if b_col1.button("Contagem por Status"):
+        st.write("Resultado da Análise:")
+        st.bar_chart(df['Status'].value_counts())
+    st.markdown("---")
 
 if st.session_state.df_mapeamento is not None:
     st.markdown("---")
     st.success("Base de conhecimento de Representantes está ativa.")
     df_map = st.session_state.df_mapeamento.copy()
 
-    # --- NOVA SEÇÃO: FERRAMENTA DE CONSULTA INTERATIVA (CUSTO ZERO) ---
     st.header("🔎 Ferramenta de Consulta Interativa (Custo Zero)")
     
-    # Nomes de coluna corretos
     city_col = 'nm_cidade_atendimento'
     rep_col = 'nm_representante'
     lat_col = 'cd_latitude_atendimento'
     lon_col = 'cd_longitude_atendimento'
+    km_col = 'qt_distancia_atendimento_km'
     
     if not all(col in df_map.columns for col in [city_col, rep_col, lat_col, lon_col]):
-        st.error("A planilha de mapeamento não contém as colunas necessárias (nm_cidade_atendimento, nm_representante, etc.).")
+        st.error("A planilha de mapeamento não contém as colunas necessárias (cidade, representante, latitude, longitude).")
     else:
-        # Cria os filtros de busca
         col1, col2 = st.columns(2)
-        
         lista_cidades = sorted(df_map[city_col].dropna().unique())
         cidade_selecionada = col1.selectbox("Filtrar por Cidade:", options=lista_cidades, index=None, placeholder="Selecione uma cidade")
-        
         lista_reps = sorted(df_map[rep_col].dropna().unique())
         rep_selecionado = col2.selectbox("Filtrar por Representante:", options=lista_reps, index=None, placeholder="Selecione um representante")
 
-        # Aplica o filtro selecionado
         filtered_df = df_map
         if cidade_selecionada:
             filtered_df = df_map[df_map[city_col] == cidade_selecionada]
         elif rep_selecionado:
             filtered_df = df_map[df_map[rep_col] == rep_selecionado]
 
-        # Exibe a tabela com os resultados filtrados
         st.write("Resultados da busca:")
         st.dataframe(filtered_df)
 
-        # --- MAPA INTERATIVO ---
         st.write("Visualização no Mapa:")
         
-        # Limpa os dados de coordenadas
         filtered_df[lat_col] = pd.to_numeric(filtered_df[lat_col], errors='coerce')
         filtered_df[lon_col] = pd.to_numeric(filtered_df[lon_col], errors='coerce')
         filtered_df.dropna(subset=[lat_col, lon_col], inplace=True)
-        filtered_df.rename(columns={lat_col: 'lat', lon_col: 'lon'}, inplace=True)
+        filtered_df = filtered_df.rename(columns={lat_col: 'lat', lon_col: 'lon'})
 
         if not filtered_df.empty:
-            # Ajusta o zoom do mapa com base no filtro
-            if cidade_selecionada or len(filtered_df) == 1:
-                zoom_level = 10 # Zoom maior para uma única cidade
-            else:
-                zoom_level = 4 # Zoom menor para ver o Brasil todo
-
+            zoom_level = 10 if cidade_selecionada or len(filtered_df) == 1 else 4
             st.pydeck_chart(pdk.Deck(
-                map_style='mapbox://styles/mapbox/satellite-streets-v11',
-                initial_view_state=pdk.ViewState(
-                    latitude=filtered_df['lat'].mean(),
-                    longitude=filtered_df['lon'].mean(),
-                    zoom=zoom_level,
-                    pitch=45,
-                ),
-                layers=[
-                    pdk.Layer('ScatterplotLayer', data=filtered_df, get_position='[lon, lat]', get_color='[200, 30, 0, 160]', get_radius=15000, pickable=True)
-                ],
-                tooltip={"html": f"<b>Cidade:</b> {{{city_col}}}<br/><b>Representante:</b> {{{rep_col}}}<br/><b>Distância:</b> {{{'qt_distancia_atendimento_km'}}} km"}
+                map_style='mapbox://styles/mapbox/light-v10', # Estilo de mapa que não exige chave
+                initial_view_state=pdk.ViewState(latitude=filtered_df['lat'].mean(), longitude=filtered_df['lon'].mean(), zoom=zoom_level, pitch=45),
+                layers=[pdk.Layer('ScatterplotLayer', data=filtered_df, get_position='[lon, lat]', get_color='[200, 30, 0, 160]', get_radius=15000, pickable=True)],
+                tooltip={"html": f"<b>Cidade:</b> {{{city_col}}}<br/><b>Representante:</b> {{{rep_col}}}<br/><b>Distância:</b> {{{km_col}}} km"}
             ))
         else:
-            st.warning("Nenhum resultado encontrado com os filtros aplicados.")
-
+            st.warning("Nenhum resultado encontrado com os filtros aplicados para exibir no mapa.")
     st.markdown("---")
 
-
 st.header("Converse com a IA")
-# (O resto do seu código, com o histórico do chat e a lógica de entrada, permanece o mesmo)
-# ...
+for message in st.session_state.display_history:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+if prompt := st.chat_input("Faça uma pergunta..."):
+    st.session_state.display_history.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
+    df_type = 'chat'
+    if any(keyword in prompt.lower() for keyword in keywords_mapeamento) and st.session_state.df_mapeamento is not None:
+        df_type = 'mapeamento'
+    elif st.session_state.df_dados is not None:
+        df_type = 'dados'
+
+    with st.chat_message("assistant"):
+        if df_type in ['mapeamento', 'dados']:
+            with st.spinner(f"Analisando no arquivo de '{df_type}'..."):
+                df_hash = pd.util.hash_pandas_object(st.session_state.get(f"df_{df_type}")).sum()
+                resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
+                if erro:
+                    st.error(erro)
+                    response_text = "Desculpe, não consegui analisar os dados."
+                else:
+                    if isinstance(resultado_analise, (pd.Series, pd.DataFrame)):
+                        st.write(f"Resultado da busca na base de '{df_type}':")
+                        st.dataframe(resultado_analise)
+                        response_text = "A informação que você pediu está na tabela acima."
+                    else:
+                        response_text = f"O resultado da sua análise é: **{resultado_analise}**"
+                st.markdown(response_text)
+        else:
+            with st.spinner("Pensando..."):
+                response = st.session_state.chat.send_message(prompt)
+                response_text = response.text
+                st.markdown(response_text)
+    
+    st.session_state.display_history.append({"role": "assistant", "content": response_text})
