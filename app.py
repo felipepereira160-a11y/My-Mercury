@@ -7,8 +7,8 @@ import time
 st.set_page_config(page_title="Seu Assistente de Dados com IA", page_icon="🧠", layout="wide")
 
 # --- Título ---
-st.title("🧠 Seu Assistente de Dados com IA")
-st.write("Converse comigo ou faça o upload de seus arquivos na barra lateral para começar a analisar!")
+st.title("🧠 I'm Fuckd")
+st.write("Converse comigo ou não fale nada!")
 
 # --- Configuração da API e do Modelo ---
 try:
