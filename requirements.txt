@@ -3,6 +3,5 @@ google-generativeai
 pandas
 openpyxl
 matplotlib
-pydeck
 openrouteservice
 matplotlib
