@@ -7,7 +7,7 @@ import time
 st.set_page_config(page_title="Seu Analista de Dados com IA", page_icon="📊", layout="wide")
 
 # --- Título ---
-st.title("📊 Eoooo")
+st.title("📊 Eo")
 st.write("Converse comigo ou faça o upload de um arquivo na barra lateral para começar a analisar!")
 
 # --- Configuração da API e do Modelo ---
@@ -26,14 +26,13 @@ if "display_history" not in st.session_state:
 if 'dataframe' not in st.session_state:
     st.session_state.dataframe = None
 
-# --- AQUI ESTÁ A OTIMIZAÇÃO PRINCIPAL ---
-@st.cache_data(ttl=3600) # Adiciona um cache de 1 hora (3600 segundos)
+@st.cache_data(ttl=3600)
 def executar_analise_pandas(_df_hash, pergunta):
     df = st.session_state.dataframe
-    time.sleep(1) # Pequeno delay para UX
+    time.sleep(1)
     prompt_engenharia = f"""
     Sua tarefa é converter uma pergunta em uma única linha de código Pandas que a responda.
-    O dataframe é `df`. As colunas relevantes sobre status são na coluna 'Status'.
+    O dataframe é `df`. A coluna relevante sobre status é 'Status'.
     Pergunta: "{pergunta}"
     Gere apenas a linha de código Pandas.
     """
@@ -67,7 +66,7 @@ with st.sidebar:
         st.session_state.display_history = []
         st.rerun()
 
-# --- Dashboard (se houver arquivo) ---
+# --- Corpo Principal ---
 if st.session_state.dataframe is not None:
     df = st.session_state.dataframe
     st.header("Dashboard do Arquivo")
@@ -78,8 +77,41 @@ if st.session_state.dataframe is not None:
     if coluna_cliente:
         clientes_unicos = df[coluna_cliente].nunique()
         col3.metric("Clientes Únicos", f"{clientes_unicos}", "clientes")
-    with st.expander("Ver pré-visualização dos dados"):
-        st.dataframe(df)
+
+    # --- NOVA SEÇÃO: BOTÕES DE ANÁLISE RÁPIDA ---
+    st.markdown("---")
+    st.subheader("Análises Frequentes (Custo Zero de IA)")
+    
+    b_col1, b_col2, b_col3 = st.columns(3)
+
+    if b_col1.button("Contagem de Ordens por Status"):
+        st.write("Resultado da Análise:")
+        status_counts = df['Status'].value_counts()
+        st.bar_chart(status_counts)
+        st.session_state.display_history.append({"role": "user", "content": "Análise: Contagem de Ordens por Status"})
+        st.session_state.display_history.append({"role": "assistant", "content": "Análise executada. O gráfico está acima."})
+
+    if b_col2.button("Top 5 Cidades (Agendadas)"):
+        st.write("Resultado da Análise:")
+        try:
+            cidade_counts = df[df['Status'] == 'Agendada']['Cidade Agendamento'].value_counts().nlargest(5)
+            st.bar_chart(cidade_counts)
+            st.session_state.display_history.append({"role": "user", "content": "Análise: Top 5 Cidades (Agendadas)"})
+            st.session_state.display_history.append({"role": "assistant", "content": "Análise executada. O gráfico está acima."})
+        except KeyError:
+            st.error("Coluna 'Cidade Agendamento' não encontrada no arquivo.")
+            
+    if b_col3.button("Top 5 Representantes (Agendadas)"):
+        st.write("Resultado da Análise:")
+        try:
+            rep_counts = df[df['Status'] == 'Agendada']['Representante Técnico'].value_counts().nlargest(5)
+            st.bar_chart(rep_counts)
+            st.session_state.display_history.append({"role": "user", "content": "Análise: Top 5 Representantes (Agendadas)"})
+            st.session_state.display_history.append({"role": "assistant", "content": "Análise executada. O gráfico está acima."})
+        except KeyError:
+            st.error("Coluna 'Representante Técnico' não encontrada no arquivo.")
+            
+    st.markdown("---")
     st.header("Converse com seus Dados")
 
 # --- Exibição do Histórico Visual ---
@@ -93,17 +125,15 @@ if prompt := st.chat_input("Converse com a IA ou faça uma pergunta sobre seus d
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Decide o modo de operação
     if st.session_state.dataframe is not None:
-        # --- Modo Analista (Sem Memória de Conversa) ---
         with st.chat_message("assistant"):
             with st.spinner("Analisando os dados..."):
-                df = st.session_state.dataframe
-                resultado_analise, erro = executar_analise_pandas(pd.util.hash_pandas_object(df).sum(), prompt)
+                df_hash = pd.util.hash_pandas_object(st.session_state.dataframe).sum()
+                resultado_analise, erro = executar_analise_pandas(df_hash, prompt)
                 
                 if erro:
                     st.error(erro)
-                    response_text = "Desculpe, não consegui analisar os dados. Tente uma pergunta mais simples."
+                    response_text = "Desculpe, não consegui analisar os dados."
                 else:
                     if isinstance(resultado_analise, (pd.Series, pd.DataFrame)) and len(resultado_analise) > 1:
                         st.write("Aqui está uma visualização para sua pergunta:")
@@ -115,7 +145,6 @@ if prompt := st.chat_input("Converse com a IA ou faça uma pergunta sobre seus d
                 st.markdown(response_text)
         st.session_state.display_history.append({"role": "assistant", "content": response_text})
     else:
-        # --- Modo Chatbot (Com Memória de Conversa) ---
         with st.chat_message("assistant"):
             with st.spinner("Pensando..."):
                 response = st.session_state.chat.send_message(prompt)
