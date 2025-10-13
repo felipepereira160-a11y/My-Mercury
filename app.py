@@ -91,14 +91,24 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
     df_dados = st.session_state.df_dados
     df_map = st.session_state.df_mapeamento
     
-    os_city_col, os_lat_col, os_lon_col, os_rep_col, os_status_col = 'Cidade Agendamento', 'Latitude', 'Longitude', 'Representante Técnico', 'Status'
-    map_rep_col, map_rep_lat_col, map_rep_lon_col = 'nm_representante', 'cd_latitude_representante', 'cd_longitude_representante'
+    os_city_col = 'Cidade Agendamento'
+    os_rep_col = 'Representante Técnico'
+    os_status_col = 'Status'
+    
+    map_city_col = 'nm_cidade_atendimento'
+    map_lat_atendimento_col = 'cd_latitude_atendimento'
+    map_lon_atendimento_col = 'cd_longitude_atendimento'
+    map_rep_col = 'nm_representante'
+    map_rep_lat_col = 'cd_latitude_representante'
+    map_rep_lon_col = 'cd_longitude_representante'
 
-    if not all(col in df_dados.columns for col in [os_city_col, os_lat_col, os_lon_col, os_rep_col, os_status_col]):
-        st.warning(f"Para usar o otimizador, a planilha de agendamentos precisa ter as colunas essenciais (Cidade Agendamento, Latitude, Longitude, etc.).")
-    elif not all(col in df_map.columns for col in [map_rep_col, map_rep_lat_col, map_rep_lon_col]):
-        st.warning(f"Para usar o otimizador, a planilha de mapeamento precisa ter as colunas de localização do representante.")
+    # Verifica se as colunas essenciais existem
+    if not all(col in df_dados.columns for col in [os_city_col, os_rep_col, os_status_col]):
+        st.warning(f"Para usar o otimizador, a planilha de agendamentos precisa ter as colunas essenciais (Cidade Agendamento, Representante Técnico, Status).")
+    elif not all(col in df_map.columns for col in [map_city_col, map_lat_atendimento_col, map_lon_atendimento_col, map_rep_col, map_rep_lat_col, map_rep_lon_col]):
+        st.warning(f"Para usar o otimizador, a planilha de mapeamento precisa ter todas as colunas de cidade e coordenadas.")
     else:
+        # Filtra apenas as ordens com status 'Agendada'
         df_agendadas = df_dados[df_dados[os_status_col] == 'Agendada'].copy()
         
         if df_agendadas.empty:
@@ -109,41 +119,77 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
 
             if cidade_selecionada:
                 ordem_selecionada = df_agendadas[df_agendadas[os_city_col] == cidade_selecionada].iloc[0]
-                ponto_atendimento = (ordem_selecionada[os_lat_col], ordem_selecionada[os_lon_col])
                 rt_atual = ordem_selecionada[os_rep_col]
-
-                distancias = []
-                for _, rt_map in df_map.iterrows():
-                    ponto_base_rt = (rt_map[map_rep_lat_col], rt_map[map_rep_lon_col])
-                    distancia = haversine(ponto_base_rt, ponto_atendimento, unit=Unit.KILOMETERS)
-                    distancias.append({'Representante': rt_map[map_rep_col], 'Distancia (km)': distancia})
                 
-                df_distancias = pd.DataFrame(distancias)
-                rt_sugerido = df_distancias.loc[df_distancias['Distancia (km)'].idxmin()]
-                
-                st.subheader(f"Análise de Proximidade para: {cidade_selecionada}")
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.info(f"**RT Atualmente Agendado:** {rt_atual}")
-                    dist_atual_df = df_distancias[df_distancias['Representante'] == rt_atual]
-                    if not dist_atual_df.empty:
-                        dist_atual = dist_atual_df['Distancia (km)'].values[0]
-                        st.metric("Distância do RT Agendado", f"{dist_atual:.1f} km")
-                    else:
-                        st.warning(f"O RT '{rt_atual}' não foi encontrado no arquivo de Mapeamento.")
-                        dist_atual = float('inf')
+                # --- LÓGICA DO "CRUZAMENTO INTELIGENTE" ---
+                cidade_info = df_map[df_map[map_city_col] == cidade_selecionada]
+                if cidade_info.empty:
+                    st.error(f"Não foi possível encontrar as coordenadas para a cidade '{cidade_selecionada}' na sua planilha de Mapeamento.")
+                else:
+                    ponto_atendimento = (cidade_info.iloc[0][map_lat_atendimento_col], cidade_info.iloc[0][map_lon_atendimento_col])
 
-                with col2:
-                    st.success(f"**Sugestão de RT Mais Próximo:** {rt_sugerido['Representante']}")
-                    economia = dist_atual - rt_sugerido['Distancia (km)']
-                    st.metric("Distância do RT Sugerido", f"{rt_sugerido['Distancia (km)']:.1f} km", delta=f"{economia:.1f} km de economia" if economia > 0 and economia != float('inf') else None)
+                    distancias = []
+                    for _, rt_map in df_map.iterrows():
+                        ponto_base_rt = (rt_map[map_rep_lat_col], rt_map[map_rep_lon_col])
+                        distancia = haversine(ponto_base_rt, ponto_atendimento, unit=Unit.KILOMETERS)
+                        distancias.append({'Representante': rt_map[map_rep_col], 'Distancia (km)': distancia})
+                    
+                    df_distancias = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
+                    rt_sugerido = df_distancias.loc[df_distancias['Distancia (km)'].idxmin()]
+                    
+                    st.subheader(f"Análise de Proximidade para: {cidade_selecionada}")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.info(f"**RT Atualmente Agendado:** {rt_atual}")
+                        dist_atual_df = df_distancias[df_distancias['Representante'] == rt_atual]
+                        if not dist_atual_df.empty:
+                            dist_atual = dist_atual_df['Distancia (km)'].values[0]
+                            st.metric("Distância do RT Agendado", f"{dist_atual:.1f} km")
+                        else:
+                            st.warning(f"O RT '{rt_atual}' não foi encontrado no arquivo de Mapeamento.")
+                            dist_atual = float('inf')
+
+                    with col2:
+                        st.success(f"**Sugestão de RT Mais Próximo:** {rt_sugerido['Representante']}")
+                        economia = dist_atual - rt_sugerido['Distancia (km)']
+                        st.metric("Distância do RT Sugerido", f"{rt_sugerido['Distancia (km)']:.1f} km", delta=f"{economia:.1f} km de economia" if economia > 0 and economia != float('inf') else None)
 
 # --- Seção de Mapeamento (Funcional) ---
 if st.session_state.df_mapeamento is not None:
     st.markdown("---")
     st.success("Base de conhecimento de Representantes está ativa.")
-    # (Código da consulta interativa e mapa que já funciona)
-    pass
+    df_map = st.session_state.df_mapeamento.copy()
+    st.header("🔎 Ferramenta de Consulta Interativa (Custo Zero)")
+    city_col_map, rep_col_map, lat_col, lon_col, km_col = 'nm_cidade_atendimento', 'nm_representante', 'cd_latitude_atendimento', 'cd_longitude_atendimento', 'qt_distancia_atendimento_km'
+    
+    if all(col in df_map.columns for col in [city_col_map, rep_col_map, lat_col, lon_col, km_col]):
+        col1, col2 = st.columns(2)
+        cidade_selecionada = col1.selectbox("Filtrar Mapeamento por Cidade:", options=sorted(df_map[city_col_map].dropna().unique()), index=None, placeholder="Selecione uma cidade")
+        rep_selecionado_map = col2.selectbox("Filtrar Mapeamento por Representante:", options=sorted(df_map[rep_col_map].dropna().unique()), index=None, placeholder="Selecione um representante")
+
+        filtered_df_map = df_map
+        if cidade_selecionada:
+            filtered_df_map = df_map[df_map[city_col_map] == cidade_selecionada]
+        elif rep_selecionado_map:
+            filtered_df_map = df_map[df_map[rep_col_map] == rep_selecionado_map]
+
+        st.write("Resultados da busca:")
+        ordem_colunas = [rep_col_map, city_col_map, km_col]
+        outras_colunas = [col for col in filtered_df_map.columns if col not in ordem_colunas]
+        nova_ordem = ordem_colunas + outras_colunas
+        st.dataframe(filtered_df_map[nova_ordem])
+
+        st.write("Visualização no Mapa:")
+        map_data = filtered_df_map.rename(columns={lat_col: 'lat', lon_col: 'lon'})
+        map_data['lat'] = pd.to_numeric(map_data['lat'], errors='coerce')
+        map_data['lon'] = pd.to_numeric(map_data['lon'], errors='coerce')
+        map_data.dropna(subset=['lat', 'lon'], inplace=True)
+        
+        map_data['size'] = 1000 if cidade_selecionada or rep_selecionado_map else 100
+        if not map_data.empty:
+            st.map(map_data, color='#FF4B4B', size='size')
+        else:
+            st.warning("Nenhum resultado com coordenadas válidas para exibir no mapa.")
 
 # --- Seção do Chat de IA ---
 st.markdown("---")
