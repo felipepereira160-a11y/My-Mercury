@@ -7,7 +7,7 @@ import time
 st.set_page_config(page_title="Seu Assistente de Dados com IA", page_icon="🧠", layout="wide")
 
 # --- Título ---
-st.title("🧠 Suffer LPZ")
+st.title("🧠 Seu Assistente de Dados com IA")
 st.write("Converse comigo ou faça o upload de seus arquivos na barra lateral para começar a analisar!")
 
 # --- Configuração da API e do Modelo ---
