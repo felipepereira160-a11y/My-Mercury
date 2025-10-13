@@ -169,9 +169,8 @@ if st.session_state.df_mapeamento is not None:
 if st.session_state.df_dados is not None and st.session_state.df_mapeamento is not None:
     st.markdown("---")
     with st.expander("🚚 Abrir Otimizador de Proximidade de RT"):
-        st.header("Otimizador de Proximidade")
         df_dados = st.session_state.df_dados; df_map = st.session_state.df_mapeamento
-        os_id_col, os_date_col, os_city_col, os_rep_col, os_status_col = 'Número da O.S', 'Data Agendamento', 'Cidade Agendamento', 'Representante Técnico', 'Status'
+        os_id_col, os_date_col, os_city_col, os_rep_col, os_status_col = 'NumeroPedido', 'Data Agendamento', 'Cidade Agendamento', 'Representante Técnico', 'Status'
         map_city_col, map_lat_atendimento_col, map_lon_atendimento_col, map_rep_col, map_rep_lat_col, map_rep_lon_col = 'nm_cidade_atendimento', 'cd_latitude_atendimento', 'cd_longitude_atendimento', 'nm_representante', 'cd_latitude_representante', 'cd_longitude_representante'
         
         required_os_cols = [os_id_col, os_date_col, os_city_col, os_rep_col, os_status_col]
@@ -199,7 +198,7 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                         rt_sugerido = df_distancias.loc[df_distancias['Distancia (km)'].idxmin()]
                         
                         for index, ordem in ordens_na_cidade.iterrows():
-                            rt_atual = ordem[os_rep_col]; data_ag = pd.to_datetime(ordem[os_date_col]).strftime('%d/%m/%Y')
+                            rt_atual = ordem[os_rep_col]; data_ag = pd.to_datetime(ordem[os_date_col], errors='coerce').strftime('%d/%m/%Y')
                             with st.expander(f"**OS: {ordem[os_id_col]}** | Data: {data_ag} | RT Atual: {rt_atual}"):
                                 col1, col2 = st.columns(2)
                                 with col1:
