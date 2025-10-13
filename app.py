@@ -1,14 +1,13 @@
 import streamlit as st
 import google.generativeai as genai
 import pandas as pd
-import pydeck as pdk
 import time
 
 # --- Configuração da Página ---
 st.set_page_config(page_title="Seu Assistente de Dados com IA", page_icon="🧠", layout="wide")
 
 # --- Título ---
-st.title("🧠 Lpz Brain")
+st.title("🧠 Suffer LPZ")
 st.write("Converse comigo ou faça o upload de seus arquivos na barra lateral para começar a analisar!")
 
 # --- Configuração da API e do Modelo ---
@@ -82,6 +81,17 @@ with st.sidebar:
         st.rerun()
 
 # --- Corpo Principal ---
+if st.session_state.df_dados is not None:
+    df_dados = st.session_state.df_dados
+    st.header("Dashboard dos Dados do Dia")
+    st.subheader("Análises Frequentes (Custo Zero de IA)")
+    b_col1, b_col2, b_col3 = st.columns(3)
+    if b_col1.button("Contagem por Status"):
+        st.write("Resultado da Análise:")
+        st.bar_chart(df_dados['Status'].value_counts())
+    st.markdown("---")
+
+
 if st.session_state.df_mapeamento is not None:
     st.markdown("---")
     st.success("Base de conhecimento de Representantes está ativa.")
@@ -110,63 +120,73 @@ if st.session_state.df_mapeamento is not None:
         elif rep_selecionado:
             filtered_df = df_map[df_map[rep_col] == rep_selecionado]
 
-        # --- MELHORIA 1: REORDENAR COLUNAS DA TABELA ---
         st.write("Resultados da busca:")
         
-        # Define a ordem desejada das colunas
+        # --- MELHORIA 1: REORDENAR COLUNAS DA TABELA ---
         ordem_colunas = [rep_col, city_col, km_col]
-        # Pega todas as outras colunas que não estão na lista
         outras_colunas = [col for col in filtered_df.columns if col not in ordem_colunas]
-        # Junta as duas listas para não perder nenhuma coluna
         nova_ordem = ordem_colunas + outras_colunas
-        
         st.dataframe(filtered_df[nova_ordem])
 
+        # --- MELHORIA 2: MAPA CONFIÁVEL COM PONTOS MAIORES QUANDO FILTRADO ---
         st.write("Visualização no Mapa:")
         
         map_data = filtered_df.copy()
-        map_data[lat_col] = pd.to_numeric(map_data[lat_col], errors='coerce')
-        map_data[lon_col] = pd.to_numeric(map_data[lon_col], errors='coerce')
-        map_data.dropna(subset=[lat_col, lon_col], inplace=True)
         map_data = map_data.rename(columns={lat_col: 'lat', lon_col: 'lon'})
+        map_data['lat'] = pd.to_numeric(map_data['lat'], errors='coerce')
+        map_data['lon'] = pd.to_numeric(map_data['lon'], errors='coerce')
+        map_data.dropna(subset=['lat', 'lon'], inplace=True)
+        
+        # Adiciona uma coluna 'size' para controlar o tamanho do ponto
+        if cidade_selecionada or rep_selecionado:
+            map_data['size'] = 1000 # Tamanho maior para pontos filtrados
+        else:
+            map_data['size'] = 100  # Tamanho menor para a visão geral
 
         if not map_data.empty:
-            # --- MELHORIA 2: PONTOS MAIORES QUANDO FILTRADO ---
-            if cidade_selecionada or rep_selecionado:
-                zoom_level = 10
-                radius_size = 1000 # Raio maior (1km) para pontos destacados
-            else:
-                zoom_level = 3.5
-                radius_size = 5000 # Raio menor (5km) para a visão geral
-
-            st.pydeck_chart(pdk.Deck(
-                map_style='mapbox://styles/mapbox/light-v10',
-                initial_view_state=pdk.ViewState(latitude=map_data['lat'].mean(), longitude=map_data['lon'].mean(), zoom=zoom_level, pitch=45),
-                layers=[
-                    pdk.Layer(
-                       'ScatterplotLayer',
-                       data=map_data,
-                       get_position='[lon, lat]',
-                       get_fill_color='[255, 0, 0, 180]',
-                       get_line_color='[255, 255, 255, 200]',
-                       get_radius=radius_size, # Usa o tamanho de raio dinâmico
-                       pickable=True, filled=True, stroked=True, line_width_min_pixels=1,
-                    ),
-                ],
-                tooltip={"html": f"<b>Cidade:</b> {{{city_col}}}<br/><b>Representante:</b> {{{rep_col}}}<br/><b>Distância:</b> {{{km_col}}} km"}
-            ))
+            st.map(map_data, color='#FF4B4B', size='size')
         else:
-            st.warning("Nenhum resultado encontrado com os filtros aplicados para exibir no mapa.")
+            st.warning("Nenhum resultado com coordenadas válidas para exibir no mapa.")
+
     st.markdown("---")
 
-
 st.header("Converse com a IA")
-# O resto do seu código (chat, dashboard de dados, etc.) permanece o mesmo.
-# Certifique-se de que ele esteja presente no seu arquivo final.
 for message in st.session_state.display_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
 if prompt := st.chat_input("Faça uma pergunta..."):
-    # (A lógica de chat e roteamento de custo zero permanece a mesma)
-    pass
+    st.session_state.display_history.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
+    df_type = 'chat'
+    if any(keyword in prompt.lower() for keyword in keywords_mapeamento) and st.session_state.df_mapeamento is not None:
+        df_type = 'mapeamento'
+    elif st.session_state.df_dados is not None:
+        df_type = 'dados'
+
+    with st.chat_message("assistant"):
+        if df_type in ['mapeamento', 'dados']:
+            with st.spinner(f"Analisando no arquivo de '{df_type}'..."):
+                df_hash = pd.util.hash_pandas_object(st.session_state.get(f"df_{df_type}")).sum()
+                resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
+                if erro:
+                    st.error(erro)
+                    response_text = "Desculpe, não consegui analisar os dados."
+                else:
+                    if isinstance(resultado_analise, (pd.Series, pd.DataFrame)):
+                        st.write(f"Resultado da busca na base de '{df_type}':")
+                        st.dataframe(resultado_analise)
+                        response_text = "A informação que você pediu está na tabela acima."
+                    else:
+                        response_text = f"O resultado da sua análise é: **{resultado_analise}**"
+                st.markdown(response_text)
+        else:
+            with st.spinner("Pensando..."):
+                response = st.session_state.chat.send_message(prompt)
+                response_text = response.text
+                st.markdown(response_text)
+    
+    st.session_state.display_history.append({"role": "assistant", "content": response_text})
