@@ -8,7 +8,7 @@ import time
 st.set_page_config(page_title="Seu Assistente de Dados com IA", page_icon="🧠", layout="wide")
 
 # --- Título ---
-st.title("🧠 Seu Assistente de Dados com IA")
+st.title("🧠 Fckd")
 st.write("Converse comigo ou faça o upload de seus arquivos na barra lateral para começar a analisar!")
 
 # --- Configuração da API e do Modelo ---
@@ -141,7 +141,7 @@ if st.session_state.df_mapeamento is not None:
         if not map_data.empty: st.map(map_data, color='#FF4B4B', size='size')
         else: st.warning("Nenhum resultado com coordenadas para exibir no mapa.")
 
-# --- OTIMIZADOR DE PROXIMIDADE ---
+# --- OTIMIZADOR DE PROXIMIDADE (OPCIONAL) ---
 if st.session_state.df_dados is not None and st.session_state.df_mapeamento is not None:
     st.markdown("---")
     with st.expander("🚚 Abrir Otimizador de Proximidade de RT"):
@@ -149,12 +149,12 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
             df_dados_otim = st.session_state.df_dados
             df_map_otim = st.session_state.df_mapeamento
             
-            os_id_col = 'Número da O.S.'
-            os_cliente_col = 'Cliente'
-            os_date_col = 'Data Agendamento'
-            os_city_col = 'Cidade Agendamento'
-            os_rep_col = 'Representante Técnico'
-            os_status_col = 'Status'
+            os_id_col = next((col for col in df_dados_otim.columns if 'número da o.s' in col.lower() or 'numeropedido' in col.lower()), None)
+            os_cliente_col = next((col for col in df_dados_otim.columns if 'cliente' in col.lower() and 'id' not in col.lower()), None)
+            os_date_col = next((col for col in df_dados_otim.columns if 'data agendamento' in col.lower()), None)
+            os_city_col = next((col for col in df_dados_otim.columns if 'cidade agendamento' in col.lower()), None)
+            os_rep_col = next((col for col in df_dados_otim.columns if 'representante técnico' in col.lower() and 'id' not in col.lower()), None)
+            os_status_col = next((col for col in df_dados_otim.columns if 'status' in col.lower()), None)
             
             map_city_col = 'nm_cidade_atendimento'
             map_lat_atendimento_col = 'cd_latitude_atendimento'
@@ -163,51 +163,46 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
             map_rep_lat_col = 'cd_latitude_representante'
             map_rep_lon_col = 'cd_longitude_representante'
 
-            df_agendadas = df_dados_otim[df_dados_otim[os_status_col] == 'Agendada'].copy()
-            
-            if df_agendadas.empty:
-                st.info("Nenhuma ordem com o status 'Agendada' foi encontrada para otimização.")
+            required_cols = [os_id_col, os_cliente_col, os_date_col, os_city_col, os_rep_col, os_status_col]
+            if not all(required_cols):
+                st.warning("Para usar o otimizador, a planilha de agendamentos precisa conter as colunas necessárias (Número da OS, Cliente, Data, Cidade, RT, Status).")
             else:
-                lista_cidades_agendadas = sorted(df_agendadas[os_city_col].dropna().unique())
-                cidade_selecionada = st.selectbox("Selecione uma cidade com agendamentos para otimizar:", options=lista_cidades_agendadas, index=None, placeholder="Escolha uma cidade")
-                
-                if cidade_selecionada:
-                    ordens_na_cidade = df_agendadas[df_agendadas[os_city_col] == cidade_selecionada]
-                    st.subheader(f"Ordens 'Agendadas' em {cidade_selecionada}:")
-                    st.dataframe(ordens_na_cidade[[os_id_col, os_cliente_col, os_date_col, os_rep_col]])
-                    
-                    st.subheader(f"Análise de Proximidade para cada Ordem:")
-                    cidade_info = df_map_otim[df_map_otim[map_city_col] == cidade_selecionada]
-                    
-                    if cidade_info.empty:
-                        st.error(f"Coordenadas para '{cidade_selecionada}' não encontradas no Mapeamento.")
-                    else:
-                        ponto_atendimento = (cidade_info.iloc[0][map_lat_atendimento_col], cidade_info.iloc[0][map_lon_atendimento_col])
-                        distancias = [{'Representante': rt_map[map_rep_col], 'Distancia (km)': haversine((rt_map[map_rep_lat_col], rt_map[map_rep_lon_col]), ponto_atendimento, unit=Unit.KILOMETERS)} for _, rt_map in df_map_otim.iterrows()]
-                        df_distancias = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
-                        rt_sugerido = df_distancias.loc[df_distancias['Distancia (km)'].idxmin()]
-                        
-                        for index, ordem in ordens_na_cidade.iterrows():
-                            rt_atual = ordem[os_rep_col]
-                            data_ag = pd.to_datetime(ordem[os_date_col], errors='coerce').strftime('%d/%m/%Y')
-                            with st.expander(f"**OS: {ordem[os_id_col]}** | Cliente: {ordem[os_cliente_col]}"):
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.info(f"**RT Agendado:** {rt_atual}")
-                                    dist_atual_df = df_distancias[df_distancias['Representante'] == rt_atual]
-                                    if not dist_atual_df.empty:
-                                        dist_atual = dist_atual_df['Distancia (km)'].values[0]; st.metric("Distância do RT Agendado", f"{dist_atual:.1f} km")
-                                    else:
-                                        st.warning(f"O RT '{rt_atual}' não foi encontrado no Mapeamento."); dist_atual = float('inf')
-                                with col2:
-                                    st.success(f"**Sugestão (Mais Próximo):** {rt_sugerido['Representante']}")
-                                    economia = dist_atual - rt_sugerido['Distancia (km)']
-                                    st.metric("Distância do RT Sugerido", f"{rt_sugerido['Distancia (km)']:.1f} km", delta=f"{economia:.1f} km de economia" if economia > 0 and economia != float('inf') else None)
-
-        except KeyError as e:
-            st.error(f"Erro de Coluna: A coluna {e} não foi encontrada em uma das planilhas. Verifique se os nomes das colunas nos seus arquivos correspondem ao esperado e tente recarregar.")
+                df_agendadas = df_dados_otim[df_dados_otim[os_status_col] == 'Agendada'].copy()
+                if df_agendadas.empty:
+                    st.info("Nenhuma ordem 'Agendada' encontrada para otimização.")
+                else:
+                    lista_cidades_agendadas = sorted(df_agendadas[os_city_col].dropna().unique())
+                    cidade_selecionada_otim = st.selectbox("Selecione uma cidade com agendamentos para otimizar:", options=lista_cidades_agendadas, index=None, placeholder="Escolha uma cidade")
+                    if cidade_selecionada_otim:
+                        ordens_na_cidade = df_agendadas[df_agendadas[os_city_col] == cidade_selecionada_otim]
+                        st.subheader(f"Ordens 'Agendadas' em {cidade_selecionada_otim}:")
+                        st.dataframe(ordens_na_cidade[[os_id_col, os_cliente_col, os_date_col, os_rep_col]])
+                        st.subheader(f"Análise de Proximidade para cada Ordem:")
+                        cidade_info = df_map_otim[df_map_otim[map_city_col] == cidade_selecionada_otim]
+                        if cidade_info.empty:
+                            st.error(f"Coordenadas para '{cidade_selecionada_otim}' não encontradas no Mapeamento.")
+                        else:
+                            ponto_atendimento = (cidade_info.iloc[0][map_lat_atendimento_col], cidade_info.iloc[0][map_lon_atendimento_col])
+                            distancias = [{'Representante': rt_map[map_rep_col], 'Distancia (km)': haversine((rt_map[map_rep_lat_col], rt_map[map_rep_lon_col]), ponto_atendimento, unit=Unit.KILOMETERS)} for _, rt_map in df_map_otim.iterrows()]
+                            df_distancias = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
+                            rt_sugerido = df_distancias.loc[df_distancias['Distancia (km)'].idxmin()]
+                            for index, ordem in ordens_na_cidade.iterrows():
+                                rt_atual = ordem[os_rep_col]; data_ag = pd.to_datetime(ordem[os_date_col], errors='coerce').strftime('%d/%m/%Y')
+                                with st.expander(f"**OS: {ordem[os_id_col]}** | Cliente: {ordem[os_cliente_col]}"):
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        st.info(f"**RT Agendado:** {rt_atual}")
+                                        dist_atual_df = df_distancias[df_distancias['Representante'] == rt_atual]
+                                        if not dist_atual_df.empty:
+                                            dist_atual = dist_atual_df['Distancia (km)'].values[0]; st.metric("Distância do RT Agendado", f"{dist_atual:.1f} km")
+                                        else:
+                                            st.warning(f"O RT '{rt_atual}' não foi encontrado no Mapeamento."); dist_atual = float('inf')
+                                    with col2:
+                                        st.success(f"**Sugestão (Mais Próximo):** {rt_sugerido['Representante']}")
+                                        economia = dist_atual - rt_sugerido['Distancia (km)']
+                                        st.metric("Distância do RT Sugerido", f"{rt_sugerido['Distancia (km)']:.1f} km", delta=f"{economia:.1f} km de economia" if economia > 0 and economia != float('inf') else None)
         except Exception as e:
-            st.error(f"Ocorreu um erro inesperado no otimizador: {e}")
+            st.error(f"Ocorreu um erro inesperado no Otimizador. Verifique os nomes das colunas em seus arquivos. Detalhe: {e}")
 
 # --- Seção do Chat de IA ---
 st.markdown("---")
