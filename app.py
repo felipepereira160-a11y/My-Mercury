@@ -1,8 +1,9 @@
 import streamlit as st
 import google.generativeai as genai
 import pandas as pd
-from haversine import haversine, Unit
+import os
 import time
+from haversine import haversine, Unit
 
 # --- Configuração da Página ---
 st.set_page_config(page_title="Seu Assistente de Dados com IA", page_icon="🧠", layout="wide")
@@ -11,16 +12,40 @@ st.set_page_config(page_title="Seu Assistente de Dados com IA", page_icon="🧠"
 st.title("🧠 Seu Assistente de Dados com IA")
 st.write("Converse comigo ou faça o upload de seus arquivos na barra lateral para começar a analisar!")
 
-# --- Configuração da API e do Modelo ---
+# --- Lógica robusta para carregar a chave da API ---
+api_key = None
+api_key_status = "Não configurada"
 try:
-    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    model = genai.GenerativeModel('gemini-pro-latest')
-except Exception as e:
-    st.error("Chave de API do Google não configurada ou inválida.")
+    api_key = st.secrets.get("GOOGLE_API_KEY")
+    if api_key:
+        api_key_status = "✔️ Carregada (Streamlit Secrets)"
+except Exception:
+    pass
+
+if not api_key:
+    api_key = os.environ.get("GOOGLE_API_KEY")
+    if api_key:
+        api_key_status = "✔️ Carregada (Variável de Ambiente)"
+    else:
+        api_key_status = "❌ ERRO: Chave não encontrada."
+
+# Exibe o status da chave de API na barra lateral para diagnóstico
+st.sidebar.caption(f"**Status da Chave de API:** {api_key_status}")
+
+model = None
+if api_key:
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-pro-latest')
+    except Exception as e:
+        st.error(f"Erro ao configurar a API do Google: {e}")
+        st.stop()
+else:
+    st.error("A chave da API do Google não foi encontrada. O aplicativo não pode funcionar.")
     st.stop()
 
 # --- Inicialização do Estado da Sessão ---
-if "chat" not in st.session_state:
+if "chat" not in st.session_state and model:
     st.session_state.chat = model.start_chat(history=[])
 if "display_history" not in st.session_state:
     st.session_state.display_history = []
@@ -33,13 +58,24 @@ if 'df_mapeamento' not in st.session_state:
 @st.cache_data(ttl=3600)
 def executar_analise_pandas(_df_hash, pergunta, df_type):
     df = st.session_state.df_dados if df_type == 'dados' else st.session_state.df_mapeamento
-    contexto = "analisar dados de ordens de serviço." if df_type == 'dados' else "buscar informações sobre representantes."
-    time.sleep(1)
-    prompt_engenharia = f"Sua tarefa é converter uma pergunta em uma única linha de código Pandas para {contexto}. O dataframe é `df`. As colunas são: {', '.join(df.columns)}. Pergunta: \"{pergunta}\". Gere apenas a linha de código Pandas."
+    prompt_engenharia = f"""
+    Você é um assistente especialista em Python e Pandas. Sua tarefa é analisar a pergunta do usuário.
+    As colunas disponíveis no dataframe `df` são: {', '.join(df.columns)}.
+
+    INSTRUÇÕES:
+    1. Determine se a pergunta do usuário PODE ser respondida usando os dados.
+    2. Se a pergunta for genérica (ex: "quem descobriu o Brasil?"), responda APENAS com: "PERGUNTA_INVALIDA".
+    3. Se a pergunta for sobre os dados, converta-a em uma única linha de código Pandas que gere o resultado.
+
+    Pergunta: "{pergunta}"
+    Sua resposta:
+    """
     try:
-        code_response = genai.GenerativeModel('gemini-pro-latest').generate_content(prompt_engenharia)
-        codigo_pandas = code_response.text.strip().replace('`', '').replace('python', '').strip()
-        resultado = eval(codigo_pandas, {'df': df, 'pd': pd})
+        response = genai.GenerativeModel('gemini-pro-latest').generate_content(prompt_engenharia)
+        resposta_ia = response.text.strip().replace('`', '').replace('python', '')
+        if resposta_ia == "PERGUNTA_INVALIDA":
+            return None, "PERGUNTA_INVALIDA"
+        resultado = eval(resposta_ia, {'df': df, 'pd': pd})
         return resultado, None
     except Exception as e:
         return None, f"Ocorreu um erro ao executar a análise: {e}"
@@ -92,31 +128,44 @@ if st.session_state.df_dados is not None:
     st.header("📊 Dashboard de Análise de Ordens de Serviço")
     df_dados = st.session_state.df_dados.copy()
     
-    date_col = next((col for col in df_dados.columns if 'data agendamento' in col.lower()), None)
-    if date_col:
-        df_dados[date_col] = pd.to_datetime(df_dados[date_col], errors='coerce', dayfirst=True)
-
     status_col = next((col for col in df_dados.columns if 'status' in col.lower()), None)
     rep_col_dados = next((col for col in df_dados.columns if 'representante técnico' in col.lower() and 'id' not in col.lower()), None)
-    
-    st.subheader("Filtros Interativos (Custo Zero)")
-    f_col1, f_col2, f_col3 = st.columns(3)
-    
-    status_options = sorted(df_dados[status_col].dropna().unique()) if status_col and status_col in df_dados else []
-    status_selecionado = f_col1.multiselect("Filtrar por Status:", options=status_options)
-    
-    rep_options = sorted(df_dados[rep_col_dados].dropna().unique()) if rep_col_dados and rep_col_dados in df_dados else []
-    rep_selecionado = f_col2.selectbox("Filtrar por Representante:", options=rep_options, index=None, placeholder="Selecione um RT")
-    
-    data_selecionada = f_col3.date_input("Filtrar por Data de Agendamento:", value=None) if date_col else None
+    city_col_dados = next((col for col in df_dados.columns if 'cidade agendamento' in col.lower()), None)
+    motivo_fechamento_col = next((col for col in df_dados.columns if 'tipo de fechamento' in col.lower()), None)
 
-    filtered_df_dados = df_dados
-    if status_selecionado and status_col: filtered_df_dados = filtered_df_dados[filtered_df_dados[status_col].isin(status_selecionado)]
-    if rep_selecionado and rep_col_dados: filtered_df_dados = filtered_df_dados[filtered_df_dados[rep_col_dados] == rep_selecionado]
-    if data_selecionada and date_col: filtered_df_dados = filtered_df_dados[filtered_df_dados[date_col].dt.date == data_selecionada]
+    st.subheader("Análises Gráficas")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("**Ordens Agendadas por Cidade (Top 10)**")
+        if status_col and city_col_dados:
+            agendadas_df = df_dados[df_dados[status_col] == 'Agendada']
+            st.bar_chart(agendadas_df[city_col_dados].value_counts().nlargest(10))
+        else:
+            st.warning("Colunas 'Status' ou 'Cidade Agendamento' não encontradas.")
+        
+        st.write("**Ordens Realizadas por RT (Top 10)**")
+        if status_col and rep_col_dados:
+            realizadas_df = df_dados[df_dados[status_col] == 'Realizada']
+            st.bar_chart(realizadas_df[rep_col_dados].value_counts().nlargest(10))
+        else:
+            st.warning("Colunas 'Status' ou 'Representante Técnico' não encontradas.")
 
-    st.dataframe(filtered_df_dados)
-    st.info(f"Mostrando {len(filtered_df_dados)} resultados.")
+    with col2:
+        st.write("**Total de Ordens por RT (Top 10)**")
+        if rep_col_dados:
+            st.bar_chart(df_dados[rep_col_dados].value_counts().nlargest(10))
+        else:
+            st.warning("Coluna 'Representante Técnico' não encontrada.")
+            
+        st.write("**Indisponibilidades (Visitas Improdutivas) por RT (Top 10)**")
+        if motivo_fechamento_col and rep_col_dados:
+            improdutivas_df = df_dados[df_dados[motivo_fechamento_col] == 'Visita Improdutiva']
+            st.bar_chart(improdutivas_df[rep_col_dados].value_counts().nlargest(10))
+        else:
+            st.warning("Colunas 'Tipo de Fechamento' ou 'Representante Técnico' não encontradas.")
+
+    with st.expander("Ver tabela de dados completa com filtros"):
+        st.dataframe(df_dados)
 
 # --- FERRAMENTA DE MAPEAMENTO ---
 if st.session_state.df_mapeamento is not None:
@@ -141,7 +190,7 @@ if st.session_state.df_mapeamento is not None:
         if not map_data.empty: st.map(map_data, color='#FF4B4B', size='size')
         else: st.warning("Nenhum resultado com coordenadas para exibir no mapa.")
 
-# --- OTIMIZADOR DE PROXIMIDADE (OPCIONAL) ---
+# --- OTIMIZADOR DE PROXIMIDADE ---
 if st.session_state.df_dados is not None and st.session_state.df_mapeamento is not None:
     st.markdown("---")
     with st.expander("🚚 Abrir Otimizador de Proximidade de RT"):
@@ -165,8 +214,7 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
 
             required_cols = [os_id_col, os_cliente_col, os_date_col, os_city_col, os_rep_col, os_status_col]
             if not all(required_cols):
-                missing = [c for c in ['OS ID', 'Cliente', 'Data', 'Cidade', 'RT', 'Status'] if not required_cols[i]]
-                st.warning(f"Para usar o otimizador, a planilha de agendamentos precisa conter colunas para: {', '.join(missing)}.")
+                st.warning("Para usar o otimizador, a planilha de agendamentos precisa conter colunas com os nomes corretos (ex: 'Status', 'Cidade Agendamento', etc).")
             else:
                 df_agendadas = df_dados_otim[df_dados_otim[os_status_col] == 'Agendada'].copy()
                 if df_agendadas.empty:
@@ -188,7 +236,7 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                             df_distancias = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
                             rt_sugerido = df_distancias.loc[df_distancias['Distancia (km)'].idxmin()]
                             for index, ordem in ordens_na_cidade.iterrows():
-                                rt_atual = ordem[os_rep_col]; data_ag = pd.to_datetime(ordem[os_date_col], errors='coerce').strftime('%d/%m/%Y')
+                                rt_atual = ordem[os_rep_col]
                                 with st.expander(f"**OS: {ordem[os_id_col]}** | Cliente: {ordem[os_cliente_col]}"):
                                     col1, col2 = st.columns(2)
                                     with col1:
@@ -227,7 +275,10 @@ if prompt := st.chat_input("Faça uma pergunta específica..."):
             with st.spinner(f"Analisando no arquivo de '{df_type}'..."):
                 df_hash = pd.util.hash_pandas_object(st.session_state.get(f"df_{df_type}")).sum()
                 resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
-                if erro:
+                
+                if erro == "PERGUNTA_INVALIDA":
+                    response_text = "Desculpe, só posso responder a perguntas relacionadas aos dados da planilha carregada."
+                elif erro:
                     st.error(erro); response_text = "Desculpe, não consegui analisar os dados."
                 else:
                     if isinstance(resultado_analise, (pd.Series, pd.DataFrame)):
@@ -240,4 +291,6 @@ if prompt := st.chat_input("Faça uma pergunta específica..."):
                 response = st.session_state.chat.send_message(prompt)
                 response_text = response.text
                 st.markdown(response_text)
+    
     st.session_state.display_history.append({"role": "assistant", "content": response_text})
+
