@@ -132,6 +132,7 @@ if st.session_state.df_dados is not None:
     with st.expander("Ver tabela de dados completa"):
         st.dataframe(df_dados)
 
+
 # --- FERRAMENTA DE MAPEAMENTO ---
 if st.session_state.df_mapeamento is not None:
     st.markdown("---")
