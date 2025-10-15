@@ -1,165 +1,87 @@
-import streamlit as st
-import google.generativeai as genai
-import pandas as pd
-from haversine import haversine, Unit
-import time
-import os
 import subprocess
+import os
+import sys
+import logging
+import tkinter as tk
+from tkinter import messagebox
 
-# --- Configuração da Página ---
-st.set_page_config(page_title="Seu Assistente de Dados com IA", page_icon="🧠", layout="wide")
+# --- Configuração do Logging ---
+# Define o caminho do arquivo de log. Funciona tanto para o script .py quanto para o .exe
+def get_log_path():
+    """Retorna o diretório base para o arquivo de log."""
+    if getattr(sys, 'frozen', False):
+        # Estamos rodando em um .exe, o log fica ao lado dele
+        return os.path.dirname(sys.executable)
+    else:
+        # Estamos rodando como script .py
+        return os.path.dirname(os.path.abspath(__file__))
 
-# --- Título ---
-st.title("🧠 Seu Assistente de Dados com IA")
-st.write("Converse comigo ou faça o upload de seus arquivos na barra lateral para começar a analisar!")
+# Configura o logger para escrever em um arquivo
+log_file_path = os.path.join(get_log_path(), 'app_log.txt')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    filename=log_file_path,
+    filemode='w' # 'w' para sobrescrever o log a cada execução
+)
 
-# --- Configuração da API e do Modelo ---
-try:
-    # Tenta obter a chave da API dos segredos do Streamlit (para deploy na nuvem)
-    api_key = st.secrets["GOOGLE_API_KEY"]
-except (FileNotFoundError, KeyError):
-    # Fallback para variável de ambiente (para execução local)
-    api_key = os.environ.get("GOOGLE_API_KEY")
-
-if not api_key:
-    st.error("Chave de API do Google não configurada. Por favor, configure-a nos segredos do Streamlit ou como uma variável de ambiente (GOOGLE_API_KEY).")
-    st.stop()
-
-genai.configure(api_key=api_key)
-model = genai.GenerativeModel('gemini-1.5-flash-latest') # Usando um modelo mais recente
-
-
-# --- Inicialização do Estado da Sessão ---
-if "chat" not in st.session_state:
-    st.session_state.chat = model.start_chat(history=[])
-if "display_history" not in st.session_state:
-    st.session_state.display_history = []
-if 'df_dados' not in st.session_state:
-    st.session_state.df_dados = None
-if 'df_mapeamento' not in st.session_state:
-    st.session_state.df_mapeamento = None
-
-# --- Funções ---
-@st.cache_data(ttl=3600)
-def executar_analise_pandas(_df_hash, pergunta, df_type):
-    """
-    Executa uma análise em um DataFrame do pandas usando um modelo generativo para criar o código.
-    """
-    df = st.session_state.df_dados if df_type == 'dados' else st.session_state.df_mapeamento
-    
-    # --- MELHORIA: PROMPT MAIS INTELIGENTE ---
-    prompt_engenharia = f"""
-    Você é um assistente especialista em Python e Pandas. Sua tarefa é analisar a pergunta do usuário.
-    As colunas disponíveis no dataframe `df` são: {', '.join(df.columns)}.
-    
-    INSTRUÇÕES:
-    1. Primeiro, determine se a pergunta do usuário PODE ser respondida usando os dados deste dataframe.
-    2. Se a pergunta for genérica ou sobre um tópico não relacionado aos dados (ex: "quem descobriu o Brasil?"), responda APENAS com a palavra: "PERGUNTA_INVALIDA".
-    3. Se a pergunta PUDER ser respondida com os dados, converta-a em uma única linha de código Pandas que gere o resultado. O código não deve ter quebras de linha.
-
-    Pergunta do usuário: "{pergunta}"
-    Sua resposta (apenas o código ou a palavra-chave):
-    """
-    
+def show_error(title, message):
+    """Exibe uma caixa de diálogo de erro gráfica."""
     try:
-        code_response = genai.GenerativeModel('gemini-1.5-flash-latest').generate_content(prompt_engenharia)
-        resposta_ia = code_response.text.strip()
-        
-        if resposta_ia == "PERGUNTA_INVALIDA":
-            return None, "PERGUNTA_INVALIDA"
-        else:
-            codigo_pandas = resposta_ia.replace('`', '').replace('python', '').strip()
-            # Usando um ambiente seguro para avaliação
-            resultado = eval(codigo_pandas, {'df': df, 'pd': pd, 'haversine': haversine, 'Unit': Unit})
-            return resultado, None
-            
+        root = tk.Tk()
+        root.withdraw()  # Esconde a janela principal do tkinter
+        messagebox.showerror(title, message)
+        root.destroy()
     except Exception as e:
-        return None, f"Ocorreu um erro ao executar a análise: {e}. Código tentado: {codigo_pandas}"
+        logging.error(f"Falha ao exibir a caixa de erro do tkinter: {e}")
 
-# --- Barra Lateral ---
-with st.sidebar:
-    st.header("Upload de Arquivos")
-    st.write("Por favor, faça o upload dos seus arquivos .csv ou .xlsx aqui.")
+def get_script_path():
+    """Retorna o caminho do script, funcionando tanto para .py quanto para o executável."""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    else:
+        return os.path.dirname(os.path.abspath(__file__))
+
+def main():
+    """Função principal que localiza e executa o app Streamlit."""
+    logging.info("="*30)
+    logging.info("Aplicação iniciada.")
     
-    uploaded_file_dados = st.file_uploader("Arquivo de Dados (ex: Ordens de Serviço)", type=['csv', 'xlsx'])
-    if uploaded_file_dados:
-        try:
-            if uploaded_file_dados.name.endswith('.csv'):
-                st.session_state.df_dados = pd.read_csv(uploaded_file_dados)
-            else:
-                st.session_state.df_dados = pd.read_excel(uploaded_file_dados)
-            st.success("Arquivo de Dados carregado com sucesso!")
-        except Exception as e:
-            st.error(f"Erro ao ler o arquivo de dados: {e}")
+    script_dir = get_script_path()
+    app_path = os.path.join(script_dir, "app.py")
+    logging.info(f"Procurando por app.py em: {app_path}")
 
-    uploaded_file_mapeamento = st.file_uploader("Arquivo de Mapeamento (ex: RTs)", type=['csv', 'xlsx'])
-    if uploaded_file_mapeamento:
-        try:
-            if uploaded_file_mapeamento.name.endswith('.csv'):
-                st.session_state.df_mapeamento = pd.read_csv(uploaded_file_mapeamento)
-            else:
-                st.session_state.df_mapeamento = pd.read_excel(uploaded_file_mapeamento)
-            st.success("Arquivo de Mapeamento carregado com sucesso!")
-        except Exception as e:
-            st.error(f"Erro ao ler o arquivo de mapeamento: {e}")
-            
-    st.markdown("---")
-    st.info("Este aplicativo usa IA para analisar dados. Os resultados podem não ser 100% precisos.")
+    if not os.path.exists(app_path):
+        error_message = f"Erro Crítico: O arquivo 'app.py' não foi encontrado no diretório: {script_dir}"
+        logging.error(error_message)
+        show_error("Erro de Arquivo", error_message)
+        return
 
-
-# --- Seção do Chat de IA ---
-st.markdown("---")
-st.header("💬 Converse com a IA para análises personalizadas")
-
-# Exibe o histórico do chat
-for message in st.session_state.display_history:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-# Campo de entrada do usuário
-if prompt := st.chat_input("Faça uma pergunta sobre seus dados..."):
-    # Adiciona e exibe a mensagem do usuário
-    st.session_state.display_history.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
-    # Determina qual dataframe usar
-    keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
-    df_type = None
-    if any(keyword in prompt.lower() for keyword in keywords_mapeamento) and st.session_state.df_mapeamento is not None:
-        df_type = 'mapeamento'
-    elif st.session_state.df_dados is not None:
-        df_type = 'dados'
+    command = [
+        sys.executable,
+        "-m",
+        "streamlit",
+        "run",
+        app_path,
+        "--server.headless", "true",
+        "--server.port", "8501"
+    ]
+    logging.info(f"Comando de execução: {' '.join(command)}")
     
-    # Gera e exibe a resposta do assistente
-    with st.chat_message("assistant"):
-        response_text = ""
-        if df_type in ['mapeamento', 'dados']:
-            with st.spinner(f"Analisando no arquivo de '{df_type}'..."):
-                df_to_use = st.session_state.get(f"df_{df_type}")
-                df_hash = pd.util.hash_pandas_object(df_to_use).sum()
-                resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
-                
-                if erro == "PERGUNTA_INVALIDA":
-                    response_text = "Desculpe, só posso responder a perguntas relacionadas aos dados da planilha carregada."
-                elif erro:
-                    st.error(erro)
-                    response_text = "Desculpe, não consegui analisar os dados. Verifique se sua pergunta é clara."
-                else:
-                    if isinstance(resultado_analise, (pd.Series, pd.DataFrame)):
-                        st.write(f"Resultado da busca na base de '{df_type}':")
-                        st.dataframe(resultado_analise)
-                        response_text = "A informação que você pediu está na tabela acima."
-                    else:
-                        response_text = f"O resultado da sua análise é: **{resultado_analise}**"
-                st.markdown(response_text)
-        else: # Se nenhum dataframe estiver carregado
-             with st.spinner("Pensando..."):
-                try:
-                    response = st.session_state.chat.send_message(prompt)
-                    response_text = response.text
-                except Exception as e:
-                    response_text = f"Ocorreu um erro ao contatar a IA: {e}"
-                st.markdown(response_text)
-    
-    st.session_state.display_history.append({"role": "assistant", "content": response_text})
+    startupinfo = None
+    if os.name == 'nt':
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+    logging.info("Iniciando o processo do Streamlit...")
+    subprocess.run(command, check=True, startupinfo=startupinfo)
+    logging.info("Processo do Streamlit finalizado normalmente.")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        # Pega qualquer erro que não foi tratado dentro de main()
+        logging.error(f"Erro fatal não tratado na aplicação: {e}", exc_info=True)
+        show_error("Erro Fatal", f"Ocorreu um erro fatal. Por favor, verifique o arquivo 'app_log.txt' para mais detalhes.\n\nErro: {e}")
+
