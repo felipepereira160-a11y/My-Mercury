@@ -29,14 +29,13 @@ if not api_key:
     else:
         api_key_status = "❌ ERRO: Chave não encontrada."
 
-# Exibe o status da chave de API na barra lateral para diagnóstico
 st.sidebar.caption(f"**Status da Chave de API:** {api_key_status}")
 
 model = None
 if api_key:
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-pro') # Mudança para gemini-pro estável
+        model = genai.GenerativeModel('gemini-pro')  # Mudança para gemini-pro estável
     except Exception as e:
         st.error(f"Erro ao configurar a API do Google: {e}")
         st.stop()
@@ -74,11 +73,8 @@ def filtrar_clientes_representantes(df):
     ]
 
     for coluna in colunas_para_filtrar:
-        # Garante que a coluna seja do tipo string para aplicar métodos de string
-        df_filtrado[coluna] = df_filtrado[coluna].astype(str)
-        # Cria a máscara booleana para encontrar os termos a serem excluídos (case-insensitive)
-        mascara = df_filtrado[coluna].str.contains('|'.join(termos_excluidos), case=False, na=False)
-        # Inverte a máscara para manter apenas as linhas que NÃO contêm os termos
+        df_filtrado[coluna] = df_filtrado[coluna].astype(str).str.lower().str.strip()
+        mascara = df_filtrado[coluna].apply(lambda x: any(termo in x for termo in termos_excluidos))
         df_filtrado = df_filtrado[~mascara]
 
     return df_filtrado
@@ -132,7 +128,6 @@ with st.sidebar:
     if data_file:
         try:
             df_temp = carregar_dataframe(data_file, separador_padrao=';')
-            # Aplica o filtro aqui
             st.session_state.df_dados = filtrar_clientes_representantes(df_temp)
             st.success("Agendamentos carregados e filtrados!")
         except Exception as e:
@@ -143,7 +138,6 @@ with st.sidebar:
     if map_file:
         try:
             df_temp_map = carregar_dataframe(map_file, separador_padrao=',')
-            # Aplica o filtro aqui também
             st.session_state.df_mapeamento = filtrar_clientes_representantes(df_temp_map)
             st.success("Mapeamento carregado e filtrado!")
         except Exception as e:
@@ -260,17 +254,14 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                         st.subheader(f"Ordens 'Agendadas' em {cidade_selecionada_otim}:")
                         st.dataframe(ordens_na_cidade[[os_id_col, os_cliente_col, os_date_col, os_rep_col]])
                         st.subheader(f"Análise de Proximidade para cada Ordem:")
-
                         cidade_info = df_map_otim[df_map_otim[map_city_col] == cidade_selecionada_otim]
                         if cidade_info.empty:
                             st.error(f"Coordenadas para '{cidade_selecionada_otim}' não encontradas no Mapeamento.")
                         else:
                             ponto_atendimento = (cidade_info.iloc[0][map_lat_atendimento_col], cidade_info.iloc[0][map_lon_atendimento_col])
 
-                            # --- Lista de representantes indesejados ---
                             termos_excluidos_otimizador = ['stellantis', 'ceabs', 'fca chrysler']
 
-                            # --- Cria lista de distâncias já filtrada ---
                             distancias = [
                                 {
                                     'Representante': str(rt_map[map_rep_col]),
@@ -281,10 +272,10 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                                     )
                                 }
                                 for _, rt_map in df_map_otim.iterrows()
-                                if not any(x in str(rt_map[map_rep_col]).lower() for x in termos_excluidos_otimizador)
+                                if not any(termo in str(rt_map[map_rep_col]).lower().strip() for termo in termos_excluidos_otimizador)
                             ]
-                            df_distancias = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
 
+                            df_distancias = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
                             rt_sugerido = None
                             if not df_distancias.empty:
                                 rt_sugerido = df_distancias.loc[df_distancias['Distancia (km)'].idxmin()]
@@ -297,10 +288,9 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                                         st.info(f"**RT Agendado:** {rt_atual}")
                                         dist_atual_df = df_distancias[df_distancias['Representante'] == rt_atual]
                                         if not dist_atual_df.empty:
-                                            dist_atual = dist_atual_df['Distancia (km)'].values[0]
-                                            st.metric("Distância do RT Agendado", f"{dist_atual:.1f} km")
+                                            dist_atual = dist_atual_df['Distancia (km)'].values[0]; st.metric("Distância do RT Agendado", f"{dist_atual:.1f} km")
                                         else:
-                                            st.warning(f"O RT '{rt_atual}' não foi encontrado ou é filtrado."); dist_atual = float('inf')
+                                            st.warning(f"O RT '{rt_atual}' não foi encontrado no Mapeamento."); dist_atual = float('inf')
                                     with col2:
                                         if rt_sugerido is not None:
                                             st.success(f"**Sugestão (Mais Próximo):** {rt_sugerido['Representante']}")
@@ -316,4 +306,12 @@ st.markdown("---")
 st.header("💬 Converse com a IA para análises personalizadas")
 for message in st.session_state.display_history:
     with st.chat_message(message["role"]):
-        st.mark
+        st.markdown(message["content"])
+
+if prompt := st.chat_input("Faça uma pergunta específica..."):
+    st.session_state.display_history.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
+    df_type = 'chat'
+    if any(keyword in prompt.lower() for keyword in keywords_mapeamento)
