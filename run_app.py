@@ -169,7 +169,7 @@ if st.session_state.df_dados is not None:
     st.subheader("Análises Gráficas")
     col1, col2 = st.columns(2)
     with col1:
-        st.write("**Ordens Agendadas por Cidade (Top 10)**")
+        st.write("**Ordens Agendas por Cidade (Top 10)**")
         if status_col and city_col_dados:
             agendadas_df = df_dados[df_dados[status_col] == 'Agendada']
             st.bar_chart(agendadas_df[city_col_dados].value_counts().nlargest(10))
@@ -265,9 +265,18 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                             st.error(f"Coordenadas para '{cidade_selecionada_otim}' não encontradas no Mapeamento.")
                         else:
                             ponto_atendimento = (cidade_info.iloc[0][map_lat_atendimento_col], cidade_info.iloc[0][map_lon_atendimento_col])
-                            distancias = [{'Representante': rt_map[map_rep_col], 'Distancia (km)': haversine((rt_map[map_rep_lat_col], rt_map[map_rep_lon_col]), ponto_atendimento, unit=Unit.KILOMETERS)} for _, rt_map in df_map_otim.iterrows()]
+                            distancias = [{'Representante': str(rt_map[map_rep_col]), 'Distancia (km)': haversine((rt_map[map_rep_lat_col], rt_map[map_rep_lon_col]), ponto_atendimento, unit=Unit.KILOMETERS)} for _, rt_map in df_map_otim.iterrows()]
                             df_distancias = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
-                            rt_sugerido = df_distancias.loc[df_distancias['Distancia (km)'].idxmin()]
+                            
+                            # Filtra explicitamente os representantes indesejados da lista de sugestões
+                            termos_excluidos_otimizador = ['stellantis', 'ceabs', 'fca chrysler']
+                            mascara_otimizador = ~df_distancias['Representante'].str.contains('|'.join(termos_excluidos_otimizador), case=False, na=False)
+                            df_distancias_filtrado = df_distancias[mascara_otimizador]
+
+                            rt_sugerido = None
+                            if not df_distancias_filtrado.empty:
+                                rt_sugerido = df_distancias_filtrado.loc[df_distancias_filtrado['Distancia (km)'].idxmin()]
+
                             for index, ordem in ordens_na_cidade.iterrows():
                                 rt_atual = ordem[os_rep_col]
                                 with st.expander(f"**OS: {ordem[os_id_col]}** | Cliente: {ordem[os_cliente_col]}"):
@@ -280,9 +289,12 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                                         else:
                                             st.warning(f"O RT '{rt_atual}' não foi encontrado no Mapeamento."); dist_atual = float('inf')
                                     with col2:
-                                        st.success(f"**Sugestão (Mais Próximo):** {rt_sugerido['Representante']}")
-                                        economia = dist_atual - rt_sugerido['Distancia (km)']
-                                        st.metric("Distância do RT Sugerido", f"{rt_sugerido['Distancia (km)']:.1f} km", delta=f"{economia:.1f} km de economia" if economia > 0 and economia != float('inf') else None)
+                                        if rt_sugerido is not None:
+                                            st.success(f"**Sugestão (Mais Próximo):** {rt_sugerido['Representante']}")
+                                            economia = dist_atual - rt_sugerido['Distancia (km)']
+                                            st.metric("Distância do RT Sugerido", f"{rt_sugerido['Distancia (km)']:.1f} km", delta=f"{economia:.1f} km de economia" if economia > 0 and economia != float('inf') else None)
+                                        else:
+                                            st.warning("Nenhum representante disponível para sugestão após a filtragem.")
         except Exception as e:
             st.error(f"Ocorreu um erro inesperado no Otimizador. Verifique os nomes das colunas em seus arquivos. Detalhe: {e}")
 
@@ -326,3 +338,4 @@ if prompt := st.chat_input("Faça uma pergunta específica..."):
                 st.markdown(response_text)
 
     st.session_state.display_history.append({"role": "assistant", "content": response_text})
+
