@@ -260,22 +260,34 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                         st.subheader(f"Ordens 'Agendadas' em {cidade_selecionada_otim}:")
                         st.dataframe(ordens_na_cidade[[os_id_col, os_cliente_col, os_date_col, os_rep_col]])
                         st.subheader(f"Análise de Proximidade para cada Ordem:")
+
                         cidade_info = df_map_otim[df_map_otim[map_city_col] == cidade_selecionada_otim]
                         if cidade_info.empty:
                             st.error(f"Coordenadas para '{cidade_selecionada_otim}' não encontradas no Mapeamento.")
                         else:
                             ponto_atendimento = (cidade_info.iloc[0][map_lat_atendimento_col], cidade_info.iloc[0][map_lon_atendimento_col])
-                            distancias = [{'Representante': str(rt_map[map_rep_col]), 'Distancia (km)': haversine((rt_map[map_rep_lat_col], rt_map[map_rep_lon_col]), ponto_atendimento, unit=Unit.KILOMETERS)} for _, rt_map in df_map_otim.iterrows()]
-                            df_distancias = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
-                            
-                            # Filtra explicitamente os representantes indesejados da lista de sugestões
+
+                            # --- Lista de representantes indesejados ---
                             termos_excluidos_otimizador = ['stellantis', 'ceabs', 'fca chrysler']
-                            mascara_otimizador = ~df_distancias['Representante'].str.contains('|'.join(termos_excluidos_otimizador), case=False, na=False)
-                            df_distancias_filtrado = df_distancias[mascara_otimizador]
+
+                            # --- Cria lista de distâncias já filtrada ---
+                            distancias = [
+                                {
+                                    'Representante': str(rt_map[map_rep_col]),
+                                    'Distancia (km)': haversine(
+                                        (rt_map[map_rep_lat_col], rt_map[map_rep_lon_col]),
+                                        ponto_atendimento,
+                                        unit=Unit.KILOMETERS
+                                    )
+                                }
+                                for _, rt_map in df_map_otim.iterrows()
+                                if not any(x in str(rt_map[map_rep_col]).lower() for x in termos_excluidos_otimizador)
+                            ]
+                            df_distancias = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
 
                             rt_sugerido = None
-                            if not df_distancias_filtrado.empty:
-                                rt_sugerido = df_distancias_filtrado.loc[df_distancias_filtrado['Distancia (km)'].idxmin()]
+                            if not df_distancias.empty:
+                                rt_sugerido = df_distancias.loc[df_distancias['Distancia (km)'].idxmin()]
 
                             for index, ordem in ordens_na_cidade.iterrows():
                                 rt_atual = ordem[os_rep_col]
@@ -285,9 +297,10 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                                         st.info(f"**RT Agendado:** {rt_atual}")
                                         dist_atual_df = df_distancias[df_distancias['Representante'] == rt_atual]
                                         if not dist_atual_df.empty:
-                                            dist_atual = dist_atual_df['Distancia (km)'].values[0]; st.metric("Distância do RT Agendado", f"{dist_atual:.1f} km")
+                                            dist_atual = dist_atual_df['Distancia (km)'].values[0]
+                                            st.metric("Distância do RT Agendado", f"{dist_atual:.1f} km")
                                         else:
-                                            st.warning(f"O RT '{rt_atual}' não foi encontrado no Mapeamento."); dist_atual = float('inf')
+                                            st.warning(f"O RT '{rt_atual}' não foi encontrado ou é filtrado."); dist_atual = float('inf')
                                     with col2:
                                         if rt_sugerido is not None:
                                             st.success(f"**Sugestão (Mais Próximo):** {rt_sugerido['Representante']}")
@@ -303,39 +316,4 @@ st.markdown("---")
 st.header("💬 Converse com a IA para análises personalizadas")
 for message in st.session_state.display_history:
     with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-if prompt := st.chat_input("Faça uma pergunta específica..."):
-    st.session_state.display_history.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
-    df_type = 'chat'
-    if any(keyword in prompt.lower() for keyword in keywords_mapeamento) and st.session_state.df_mapeamento is not None:
-        df_type = 'mapeamento'
-    elif st.session_state.df_dados is not None:
-        df_type = 'dados'
-    with st.chat_message("assistant"):
-        if df_type in ['mapeamento', 'dados']:
-            with st.spinner(f"Analisando no arquivo de '{df_type}'..."):
-                df_hash = pd.util.hash_pandas_object(st.session_state.get(f"df_{df_type}")).sum()
-                resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
-
-                if erro == "PERGUNTA_INVALIDA":
-                    response_text = "Desculpe, só posso responder a perguntas relacionadas aos dados da planilha carregada."
-                elif erro:
-                    st.error(erro); response_text = "Desculpe, não consegui analisar os dados."
-                else:
-                    if isinstance(resultado_analise, (pd.Series, pd.DataFrame)):
-                        st.write(f"Resultado da busca na base de '{df_type}':"); st.dataframe(resultado_analise); response_text = "A informação que você pediu está na tabela acima."
-                    else:
-                        response_text = f"O resultado da sua análise é: **{resultado_analise}**"
-                st.markdown(response_text)
-        else:
-            with st.spinner("Pensando..."):
-                response = st.session_state.chat.send_message(prompt)
-                response_text = response.text
-                st.markdown(response_text)
-
-    st.session_state.display_history.append({"role": "assistant", "content": response_text})
-
+        st.mark
