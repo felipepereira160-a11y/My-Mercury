@@ -472,7 +472,6 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
             os_cliente_col = next((col for col in df_dados_otim.columns if 'cliente' in col.lower() and 'id' not in col.lower()), None)
             os_date_col = next((col for col in df_dados_otim.columns if 'data agendamento' in col.lower()), None)
             os_city_col = next((col for col in df_dados_otim.columns if 'cidade agendamento' in col.lower() or 'cidade o.s.' in col.lower()), None)
-            # CORREÇÃO: Lógica aprimorada para garantir que a coluna do NOME seja selecionada
             os_rep_col = next((col for col in df_dados_otim.columns if 'representante técnico' in col.lower() and 'id' not in col.lower()), None)
             if not os_rep_col:
                 os_rep_col = next((col for col in df_dados_otim.columns if 'representante' in col.lower() and 'id' not in col.lower()), None)
@@ -489,11 +488,9 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
             if not all(required_cols):
                 st.warning("Para usar o otimizador, a planilha de agendamentos precisa conter colunas com os nomes corretos (incluindo Status e Representante sem ID).")
             else:
-                # NOVO: Filtro de Status interativo
                 st.subheader("Filtro de Status")
                 all_statuses = df_dados_otim[os_status_col].dropna().unique().tolist()
                 
-                # Define os status de interesse como padrão, se existirem na lista
                 default_selection = [s for s in ['Agendada', 'Serviços realizados', 'Parcialmente realizado'] if s in all_statuses]
 
                 status_selecionados = st.multiselect(
@@ -573,49 +570,51 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
             st.error(f"Ocorreu um erro inesperado no Otimizador. Verifique os nomes das colunas. Detalhe: {e}")
 
 # --- Seção do Chat de IA ---
-if st.session_state.df_dados is not None or st.session_state.df_mapeamento is not None:
-    st.markdown("---")
-    st.header("💬 Converse com a IA para análises personalizadas")
-    for message in st.session_state.display_history:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+st.markdown("---")
+st.header("💬 Converse com a IA para análises personalizadas")
+for message in st.session_state.display_history:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-    if prompt := st.chat_input("Faça uma pergunta específica..."):
-        st.session_state.display_history.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
-        df_type = 'chat'
-        if any(keyword in prompt.lower() for keyword in keywords_mapeamento) and st.session_state.df_mapeamento is not None:
-            df_type = 'mapeamento'
-        elif st.session_state.df_dados is not None:
-            df_type = 'dados'
-        with st.chat_message("assistant"):
-            if df_type in ['mapeamento', 'dados']:
-                with st.spinner(f"Analisando no arquivo de '{df_type}'..."):
-                    current_df = st.session_state.get(f"df_{df_type}")
-                    if current_df is not None:
-                        df_hash = pd.util.hash_pandas_object(current_df).sum()
-                        resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
-
-                        if erro == "PERGUNTA_INVALIDA":
-                            response_text = "Desculpe, só posso responder a perguntas relacionadas aos dados da planilha carregada."
-                        elif erro:
-                            st.error(erro); response_text = "Desculpe, não consegui analisar os dados."
-                        else:
-                            if isinstance(resultado_analise, (pd.Series, pd.DataFrame)):
-                                st.write(f"Resultado da busca na base de '{df_type}':"); st.dataframe(resultado_analise); response_text = "A informação que você pediu está na tabela acima."
-                            else:
-                                response_text = f"O resultado da sua análise é: **{resultado_analise}**"
-                        st.markdown(response_text)
+if prompt := st.chat_input("Faça uma pergunta específica..."):
+    st.session_state.display_history.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    
+    keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
+    df_type = 'chat'
+    
+    # Prioriza o df_mapeamento se palavras-chave estiverem presentes
+    if any(keyword in prompt.lower() for keyword in keywords_mapeamento) and st.session_state.df_mapeamento is not None:
+        df_type = 'mapeamento'
+    # Usa df_dados se estiver carregado e o mapeamento não for o alvo
+    elif st.session_state.df_dados is not None:
+        df_type = 'dados'
+        
+    with st.chat_message("assistant"):
+        if df_type in ['mapeamento', 'dados']:
+            with st.spinner(f"Analisando no arquivo de '{df_type}'..."):
+                current_df = st.session_state.get(f"df_{df_type}")
+                df_hash = pd.util.hash_pandas_object(current_df).sum()
+                resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
+                
+                if erro == "PERGUNTA_INVALIDA":
+                    response_text = "Desculpe, só posso responder a perguntas relacionadas aos dados da planilha carregada."
+                elif erro:
+                    st.error(erro)
+                    response_text = "Desculpe, não consegui analisar os dados."
+                else:
+                    if isinstance(resultado_analise, (pd.Series, pd.DataFrame)):
+                        st.write(f"Resultado da busca na base de '{df_type}':")
+                        st.dataframe(resultado_analise)
+                        response_text = "A informação que você pediu está na tabela acima."
                     else:
-                        response_text = "Por favor, carregue um arquivo de dados primeiro."
-                        st.warning(response_text)
-
-            else: # modo chat genérico
-                with st.spinner("Pensando..."):
-                    response = st.session_state.chat.send_message(prompt)
-                    response_text = response.text
-                    st.markdown(response_text)
-
-        st.session_state.display_history.append({"role": "assistant", "content": response_text})
+                        response_text = f"O resultado da sua análise é: **{resultado_analise}**"
+                st.markdown(response_text)
+        else: # modo chat genérico
+            with st.spinner("Pensando..."):
+                response = st.session_state.chat.send_message(prompt)
+                response_text = response.text
+                st.markdown(response_text)
+    
+    st.session_state.display_history.append({"role": "assistant", "content": response_text})
