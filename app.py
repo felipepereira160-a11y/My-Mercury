@@ -173,7 +173,6 @@ if st.session_state.df_dados is not None:
     tipos_nao_realizadas = ['Indisponibilidade técnica', 'Visita Improdutiva', 'Reagendamento solicitado', 'Não comparecimento do técnico']
 
     col1, col2 = st.columns(2)
-
     with col1:
         fechamento1 = st.selectbox("Filtrar gráfico 1 - Tipo de Fechamento Problemático", tipos_nao_realizadas, key='fech1')
         df_graf1 = grafico_fechamentos_problematicos(df_dados, status_col, tipo_fechamento_col, rep_col, fechamento1)
@@ -191,81 +190,6 @@ if st.session_state.df_dados is not None:
             st.bar_chart(df_graf2.set_index(rep_col)['Quantidade'])
         else:
             st.info("Nenhuma ocorrência encontrada.")
-
-# --- MAPA ---
-if st.session_state.df_mapeamento is not None:
-    st.markdown("---")
-    st.header("🗺️ Mapeamento de RT")
-    df_map = aplicar_blacklist(st.session_state.df_mapeamento.copy())
-    city_col_map, rep_col_map, lat_col, lon_col, km_col = 'nm_cidade_atendimento', 'nm_representante', 'cd_latitude_atendimento', 'cd_longitude_atendimento', 'qt_distancia_atendimento_km'
-
-    if all(col in df_map.columns for col in [city_col_map, rep_col_map, lat_col, lon_col, km_col]):
-        col1, col2 = st.columns(2)
-        cidades_opcoes = ["Todos"] + sorted(df_map[city_col_map].dropna().unique())
-        reps_opcoes = ["Todos"] + sorted(df_map[rep_col_map].dropna().unique())
-        cidade_selecionada = col1.selectbox("Filtrar por Cidade:", cidades_opcoes)
-        rep_selecionado = col2.selectbox("Filtrar por Representante:", reps_opcoes)
-
-        df_filtrado = df_map.copy()
-        if cidade_selecionada != "Todos": df_filtrado = df_filtrado[df_filtrado[city_col_map]==cidade_selecionada]
-        if rep_selecionado != "Todos": df_filtrado = df_filtrado[df_map[rep_col_map]==rep_selecionado]
-
-        st.dataframe(df_filtrado)
-        map_data = df_filtrado.rename(columns={lat_col:'lat', lon_col:'lon'})
-        map_data['lat'] = pd.to_numeric(map_data['lat'], errors='coerce')
-        map_data['lon'] = pd.to_numeric(map_data['lon'], errors='coerce')
-        map_data.dropna(subset=['lat','lon'], inplace=True)
-        if not map_data.empty: st.map(map_data, size=100)
-
-# --- OTIMIZADOR ---
-if st.session_state.df_dados is not None and st.session_state.df_mapeamento is not None:
-    st.markdown("---")
-    with st.expander("🚚 Otimizador de Proximidade de RT"):
-        df_dados_otim = aplicar_blacklist(st.session_state.df_dados.copy())
-        df_map_otim = aplicar_blacklist(st.session_state.df_mapeamento.copy())
-
-        os_id_col = next((col for col in df_dados_otim.columns if 'número da o.s' in col.lower() or 'numeropedido' in col.lower()), None)
-        os_cliente_col = next((col for col in df_dados_otim.columns if 'cliente' in col.lower() and 'id' not in col.lower()), None)
-        os_city_col = next((col for col in df_dados_otim.columns if 'cidade agendamento' in col.lower()), None)
-        os_rep_col = next((col for col in df_dados_otim.columns if 'representante técnico' in col.lower() and 'id' not in col.lower()), None)
-        os_status_col = next((col for col in df_dados_otim.columns if 'status' in col.lower()), None)
-        os_date_col = next((col for col in df_dados_otim.columns if 'data agendamento' in col.lower()), None)
-
-        if not all([os_id_col, os_cliente_col, os_city_col, os_rep_col, os_status_col, os_date_col]):
-            st.warning("Colunas necessárias não encontradas no arquivo de agendamentos.")
-        else:
-            cidades_opcoes_otim = ["Todos"] + sorted(df_dados_otim[os_city_col].dropna().unique())
-            cidade_selecionada_otim = st.selectbox("Selecione uma cidade:", cidades_opcoes_otim)
-
-            if cidade_selecionada_otim=="Todos":
-                ordens_na_cidade = pd.DataFrame()  # Não mostrar tudo por padrão
-            else:
-                ordens_na_cidade = df_dados_otim[df_dados_otim[os_city_col]==cidade_selecionada_otim]
-
-            if ordens_na_cidade.empty:
-                st.info("Nenhuma OS agendada encontrada.")
-            else:
-                st.dataframe(ordens_na_cidade[[os_id_col, os_cliente_col, os_date_col, os_rep_col]])
-                # Proximidade (exemplo com primeira cidade disponível)
-                map_city_col, map_lat_col, map_lon_col, map_rep_col_map, map_rep_lat_col, map_rep_lon_col = 'nm_cidade_atendimento', 'cd_latitude_atendimento', 'cd_longitude_atendimento', 'nm_representante', 'cd_latitude_representante', 'cd_longitude_representante'
-                for _, ordem in ordens_na_cidade.iterrows():
-                    cidade_info = df_map_otim[df_map_otim[map_city_col]==ordem[os_city_col]]
-                    if not cidade_info.empty:
-                        ponto_atendimento = (cidade_info.iloc[0][map_lat_col], cidade_info.iloc[0][map_lon_col])
-                        distancias = [{'Representante': rt_map[map_rep_col_map], 'Distancia (km)': haversine((rt_map[map_rep_lat_col], rt_map[map_rep_lon_col]), ponto_atendimento, unit=Unit.KILOMETERS)} for _, rt_map in df_map_otim.iterrows()]
-                        df_distancias = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
-                        rt_sugerido = df_distancias.loc[df_distancias['Distancia (km)'].idxmin()]
-                        with st.expander(f"OS: {ordem[os_id_col]} | Cliente: {ordem[os_cliente_col]}"):
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.info(f"RT Agendado: {ordem[os_rep_col]}")
-                                dist_atual_df = df_distancias[df_distancias['Representante']==ordem[os_rep_col]]
-                                dist_atual = dist_atual_df['Distancia (km)'].values[0] if not dist_atual_df.empty else float('inf')
-                                st.metric("Distância do RT Agendado", f"{dist_atual:.1f} km")
-                            with col2:
-                                st.success(f"Sugestão (Mais Próximo): {rt_sugerido['Representante']}")
-                                economia = dist_atual - rt_sugerido['Distancia (km)']
-                                st.metric("Distância do RT Sugerido", f"{rt_sugerido['Distancia (km)']:.1f} km", delta=f"{economia:.1f} km economia" if economia>0 and economia!=float('inf') else None)
 
 # --- CHAT ---
 st.markdown("---")
@@ -299,4 +223,5 @@ if prompt := st.chat_input("Faça uma pergunta específica..."):
                     st.dataframe(resultado)
                     response_text = "Resultado exibido na tabela acima."
                 else:
-                    response_text = f"Resultado": {resultado}
+                    response_text = f"Resultado: {resultado}"
+        st.markdown(response_text)
