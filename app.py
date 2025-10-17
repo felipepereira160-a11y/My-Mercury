@@ -97,7 +97,6 @@ def executar_analise_pandas(_df_hash, pergunta, df_type):
         return None, f"Ocorreu um erro ao executar a análise: {e}"
 
 def carregar_dataframe(arquivo, separador_padrao=','):
-    # CORREÇÃO FINAL: Especifica o 'engine' para evitar erros
     nome_arquivo = arquivo.name.lower()
     if nome_arquivo.endswith('.xlsx'):
         return pd.read_excel(arquivo, engine='openpyxl')
@@ -165,6 +164,7 @@ with st.sidebar:
 
 # --- DASHBOARD DE ANÁLISE DE ORDENS DE SERVIÇO (Usa df_dados)---
 if st.session_state.df_dados is not None:
+    # Código do dashboard inalterado...
     st.markdown("---")
     st.header("📊 Dashboard de Análise de Ordens de Serviço")
     df_dados_original = st.session_state.df_dados.copy()
@@ -255,29 +255,38 @@ if st.session_state.df_pagamento is not None:
 
             # --- Identificação flexível das colunas ---
             os_col = next((col for col in df_custos.columns if 'os' in col.lower()), None)
-            data_ag_col = next((col for col in df_custos.columns if 'data de agendamento' in col.lower()), None)
+            # CORREÇÃO: Mudar de 'Data de Agendamento' para 'Data de Fechamento'
+            data_fech_col = next((col for col in df_custos.columns if 'data de fechamento' in col.lower()), None)
             cidade_os_col = next((col for col in df_custos.columns if 'cidade o.s.' in col.lower()), None)
             cidade_rt_col = next((col for col in df_custos.columns if 'cidade rt' in col.lower()), None)
             rep_col = next((col for col in df_custos.columns if 'representante' in col.lower() and 'nome fantasia' not in col.lower()), None)
             tec_col = next((col for col in df_custos.columns if 'técnico' in col.lower()), None)
             valor_desl_col = next((col for col in df_custos.columns if 'valor deslocamento' in col.lower()), None)
-            desloc_km_col = next((col for col in df_custos.columns if col.lower() == 'deslocamento'), None) # Busca exata
+            desloc_km_col = next((col for col in df_custos.columns if col.lower() == 'deslocamento'), None)
             valor_km_col = next((col for col in df_custos.columns if 'valor km rt' in col.lower()), None)
             abrang_col = next((col for col in df_custos.columns if 'abrangência rt' in col.lower()), None)
 
-            required_cols_custos = [os_col, data_ag_col, cidade_os_col, cidade_rt_col, rep_col, tec_col, valor_desl_col, desloc_km_col, valor_km_col, abrang_col]
+            # CORREÇÃO: Atualiza a lista de colunas necessárias
+            required_cols_custos = [os_col, data_fech_col, cidade_os_col, cidade_rt_col, rep_col, tec_col, valor_desl_col, desloc_km_col, valor_km_col, abrang_col]
 
             if all(required_cols_custos):
                 # --- 1. Preparação e Cálculo de Custos ---
-                df_custos['DATA_ANALISE'] = pd.to_datetime(df_custos[data_ag_col], dayfirst=True, errors='coerce').dt.date
+                # CORREÇÃO: Usa a coluna de data de fechamento
+                df_custos['DATA_ANALISE'] = pd.to_datetime(df_custos[data_fech_col], dayfirst=True, errors='coerce').dt.date
                 df_custos.dropna(subset=['DATA_ANALISE', cidade_os_col, cidade_rt_col], inplace=True)
+
+                # ROBUSTEZ: Remove espaços em branco antes de agrupar
+                for col in [cidade_os_col, rep_col, tec_col, cidade_rt_col]:
+                    if col in df_custos.columns and df_custos[col].dtype == 'object':
+                        df_custos[col] = df_custos[col].str.strip()
                 
+                # Limpeza de valores (sem alterações)
                 df_custos['VALOR_DESLOC_ORIGINAL'] = safe_to_numeric(df_custos[valor_desl_col])
                 df_custos['DESLOC_KM_NUM'] = safe_to_numeric(df_custos[desloc_km_col])
                 df_custos['VALOR_KM_NUM'] = safe_to_numeric(df_custos[valor_km_col])
                 df_custos['ABRANG_NUM'] = safe_to_numeric(df_custos[abrang_col])
                 
-                mesma_cidade_mask = df_custos[cidade_rt_col].str.strip().str.lower() == df_custos[cidade_os_col].str.strip().str.lower()
+                mesma_cidade_mask = df_custos[cidade_rt_col] == df_custos[cidade_os_col]
                 valor_calculado = (df_custos['DESLOC_KM_NUM'] * df_custos['VALOR_KM_NUM']) - df_custos['ABRANG_NUM']
                 valor_calculado[valor_calculado < 0] = 0 
                 
@@ -288,7 +297,8 @@ if st.session_state.df_pagamento is not None:
                 df_custo_zero = df_custos[mesma_cidade_mask]
                 if not df_custo_zero.empty:
                     st.info(f"Encontradas {len(df_custo_zero)} ordens onde a cidade do RT é a mesma da O.S.")
-                    st.dataframe(df_custo_zero[[os_col, data_ag_col, cidade_os_col, cidade_rt_col, rep_col, tec_col, 'VALOR_DESLOC_ORIGINAL', 'VALOR_CALCULADO', 'OBSERVACAO']])
+                    # CORREÇÃO: Exibe a data de fechamento
+                    st.dataframe(df_custo_zero[[os_col, data_fech_col, cidade_os_col, cidade_rt_col, rep_col, tec_col, 'VALOR_DESLOC_ORIGINAL', 'VALOR_CALCULADO', 'OBSERVACAO']])
                 else:
                     st.success("Nenhuma ordem encontrada com a Cidade do RT igual à Cidade da O.S.")
 
@@ -307,7 +317,8 @@ if st.session_state.df_pagamento is not None:
                     st.warning(f"Foram encontradas {len(grupos_com_duplicatas)} ordens em grupos com potencial de duplicidade.")
                     
                     df_resultado_final = grupos_com_duplicatas.sort_values(by=group_keys + [os_col])
-                    cols_to_show = [os_col, data_ag_col, cidade_os_col, rep_col, tec_col, 'VALOR_DESLOC_ORIGINAL', 'VALOR_CALCULADO_AJUSTADO', 'OBSERVACAO']
+                    # CORREÇÃO: Exibe a data de fechamento
+                    cols_to_show = [os_col, data_fech_col, cidade_os_col, rep_col, tec_col, 'VALOR_DESLOC_ORIGINAL', 'VALOR_CALCULADO_AJUSTADO', 'OBSERVACAO']
                     
                     st.dataframe(df_resultado_final[cols_to_show])
 
@@ -320,13 +331,14 @@ if st.session_state.df_pagamento is not None:
                     )
 
             else:
-                st.error("ERRO: Para usar esta análise, a planilha de pagamento precisa conter todas as seguintes colunas: 'OS', 'Data de Agendamento', 'Cidade O.S.', 'Cidade RT', 'Representante', 'Técnico', 'Valor Deslocamento', 'Deslocamento', 'Valor KM RT', 'AC Abrangência RT'.")
+                st.error("ERRO: Para usar esta análise, a planilha de pagamento precisa conter todas as seguintes colunas: 'OS', 'Data de Fechamento', 'Cidade O.S.', 'Cidade RT', 'Representante', 'Técnico', 'Valor Deslocamento', 'Deslocamento', 'Valor KM RT', 'AC Abrangência RT'.")
 
         except Exception as e:
             st.error(f"Ocorreu um erro inesperado no Analisador de Custos. Detalhe: {e}")
 
 # --- FERRAMENTA DE DEVOLUÇÃO DE ORDENS (Usa df_devolucao) ---
 if st.session_state.df_devolucao is not None:
+    # Código inalterado...
     st.markdown("---")
     st.header("📦 Ferramenta de Devolução de Ordens Vencidas")
     df_devolucao = st.session_state.df_devolucao.copy()
@@ -375,6 +387,7 @@ if st.session_state.df_devolucao is not None:
 
 # --- FERRAMENTA DE MAPEAMENTO (Usa df_mapeamento) ---
 if st.session_state.df_mapeamento is not None:
+    # Código inalterado...
     st.markdown("---")
     st.header("🗺️ Ferramenta de Mapeamento e Consulta de RT")
     df_map = st.session_state.df_mapeamento.copy()
@@ -397,6 +410,7 @@ if st.session_state.df_mapeamento is not None:
 
 # --- OTIMIZADOR DE PROXIMIDADE (Usa df_dados e df_mapeamento) ---
 if st.session_state.df_dados is not None and st.session_state.df_mapeamento is not None:
+    # Código inalterado...
     st.markdown("---")
     with st.expander("🚚 Abrir Otimizador de Proximidade de RT"):
         try:
@@ -483,42 +497,49 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
             st.error(f"Ocorreu um erro inesperado no Otimizador. Verifique os nomes das colunas. Detalhe: {e}")
 
 # --- Seção do Chat de IA ---
-st.markdown("---")
-st.header("💬 Converse com a IA para análises personalizadas")
-for message in st.session_state.display_history:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+if st.session_state.df_dados is not None or st.session_state.df_mapeamento is not None:
+    st.markdown("---")
+    st.header("💬 Converse com a IA para análises personalizadas")
+    for message in st.session_state.display_history:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-if prompt := st.chat_input("Faça uma pergunta específica..."):
-    st.session_state.display_history.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
-    df_type = 'chat'
-    if any(keyword in prompt.lower() for keyword in keywords_mapeamento) and st.session_state.df_mapeamento is not None:
-        df_type = 'mapeamento'
-    elif st.session_state.df_dados is not None:
-        df_type = 'dados'
-    with st.chat_message("assistant"):
-        if df_type in ['mapeamento', 'dados']:
-            with st.spinner(f"Analisando no arquivo de '{df_type}'..."):
-                df_hash = pd.util.hash_pandas_object(st.session_state.get(f"df_{df_type}")).sum()
-                resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
+    if prompt := st.chat_input("Faça uma pergunta específica..."):
+        st.session_state.display_history.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
+        df_type = 'chat'
+        if any(keyword in prompt.lower() for keyword in keywords_mapeamento) and st.session_state.df_mapeamento is not None:
+            df_type = 'mapeamento'
+        elif st.session_state.df_dados is not None:
+            df_type = 'dados'
+        with st.chat_message("assistant"):
+            if df_type in ['mapeamento', 'dados']:
+                with st.spinner(f"Analisando no arquivo de '{df_type}'..."):
+                    current_df = st.session_state.get(f"df_{df_type}")
+                    if current_df is not None:
+                        df_hash = pd.util.hash_pandas_object(current_df).sum()
+                        resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
 
-                if erro == "PERGUNTA_INVALIDA":
-                    response_text = "Desculpe, só posso responder a perguntas relacionadas aos dados da planilha carregada."
-                elif erro:
-                    st.error(erro); response_text = "Desculpe, não consegui analisar os dados."
-                else:
-                    if isinstance(resultado_analise, (pd.Series, pd.DataFrame)):
-                        st.write(f"Resultado da busca na base de '{df_type}':"); st.dataframe(resultado_analise); response_text = "A informação que você pediu está na tabela acima."
+                        if erro == "PERGUNTA_INVALIDA":
+                            response_text = "Desculpe, só posso responder a perguntas relacionadas aos dados da planilha carregada."
+                        elif erro:
+                            st.error(erro); response_text = "Desculpe, não consegui analisar os dados."
+                        else:
+                            if isinstance(resultado_analise, (pd.Series, pd.DataFrame)):
+                                st.write(f"Resultado da busca na base de '{df_type}':"); st.dataframe(resultado_analise); response_text = "A informação que você pediu está na tabela acima."
+                            else:
+                                response_text = f"O resultado da sua análise é: **{resultado_analise}**"
+                        st.markdown(response_text)
                     else:
-                        response_text = f"O resultado da sua análise é: **{resultado_analise}**"
-                st.markdown(response_text)
-        else:
-            with st.spinner("Pensando..."):
-                response = st.session_state.chat.send_message(prompt)
-                response_text = response.text
-                st.markdown(response_text)
+                        response_text = "Por favor, carregue um arquivo de dados primeiro."
+                        st.warning(response_text)
 
-    st.session_state.display_history.append({"role": "assistant", "content": response_text})
+            else: # modo chat genérico
+                with st.spinner("Pensando..."):
+                    response = st.session_state.chat.send_message(prompt)
+                    response_text = response.text
+                    st.markdown(response_text)
+
+        st.session_state.display_history.append({"role": "assistant", "content": response_text})
