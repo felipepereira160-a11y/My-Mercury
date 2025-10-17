@@ -6,6 +6,7 @@ import os
 import time
 from haversine import haversine, Unit
 from io import BytesIO
+from datetime import datetime
 
 # --- Configuração da Página ---
 st.set_page_config(page_title="Seu Assistente de Dados com IA", page_icon="🧠", layout="wide")
@@ -255,7 +256,6 @@ if st.session_state.df_pagamento is not None:
 
             # --- Identificação flexível das colunas ---
             os_col = next((col for col in df_custos.columns if 'os' in col.lower()), None)
-            # CORREÇÃO: Mudar de 'Data de Agendamento' para 'Data de Fechamento'
             data_fech_col = next((col for col in df_custos.columns if 'data de fechamento' in col.lower()), None)
             cidade_os_col = next((col for col in df_custos.columns if 'cidade o.s.' in col.lower()), None)
             cidade_rt_col = next((col for col in df_custos.columns if 'cidade rt' in col.lower()), None)
@@ -265,59 +265,107 @@ if st.session_state.df_pagamento is not None:
             desloc_km_col = next((col for col in df_custos.columns if col.lower() == 'deslocamento'), None)
             valor_km_col = next((col for col in df_custos.columns if 'valor km rt' in col.lower()), None)
             abrang_col = next((col for col in df_custos.columns if 'abrangência rt' in col.lower()), None)
+            valor_extra_col = next((col for col in df_custos.columns if 'valor extra' in col.lower()), None)
+            pedagio_col = next((col for col in df_custos.columns if 'pedágio' in col.lower()), None)
 
-            # CORREÇÃO: Atualiza a lista de colunas necessárias
-            required_cols_custos = [os_col, data_fech_col, cidade_os_col, cidade_rt_col, rep_col, tec_col, valor_desl_col, desloc_km_col, valor_km_col, abrang_col]
+            required_cols_custos = [os_col, data_fech_col, cidade_os_col, cidade_rt_col, rep_col, tec_col, valor_desl_col, desloc_km_col, valor_km_col, abrang_col, valor_extra_col, pedagio_col]
 
             if all(required_cols_custos):
-                # --- 1. Preparação e Cálculo de Custos ---
-                # CORREÇÃO: Usa a coluna de data de fechamento
-                df_custos['DATA_ANALISE'] = pd.to_datetime(df_custos[data_fech_col], dayfirst=True, errors='coerce').dt.date
-                df_custos.dropna(subset=['DATA_ANALISE', cidade_os_col, cidade_rt_col], inplace=True)
-
-                # ROBUSTEZ: Remove espaços em branco antes de agrupar
-                for col in [cidade_os_col, rep_col, tec_col, cidade_rt_col]:
-                    if col in df_custos.columns and df_custos[col].dtype == 'object':
-                        df_custos[col] = df_custos[col].str.strip()
-                
-                # Limpeza de valores (sem alterações)
+                # --- 1. Preparação e Filtragem Inicial ---
                 df_custos['VALOR_DESLOC_ORIGINAL'] = safe_to_numeric(df_custos[valor_desl_col])
-                df_custos['DESLOC_KM_NUM'] = safe_to_numeric(df_custos[desloc_km_col])
-                df_custos['VALOR_KM_NUM'] = safe_to_numeric(df_custos[valor_km_col])
-                df_custos['ABRANG_NUM'] = safe_to_numeric(df_custos[abrang_col])
+                df_custos['VALOR_EXTRA_NUM'] = safe_to_numeric(df_custos[valor_extra_col])
+                df_custos['PEDAGIO_NUM'] = safe_to_numeric(df_custos[pedagio_col])
+
+                filtro_custos_positivos_mask = (
+                    (df_custos['VALOR_DESLOC_ORIGINAL'] > 0) |
+                    (df_custos['VALOR_EXTRA_NUM'] > 0) |
+                    (df_custos['PEDAGIO_NUM'] > 0)
+                )
+                df_custos = df_custos[filtro_custos_positivos_mask].copy()
+
+                df_custos['DATA_ANALISE'] = pd.to_datetime(df_custos[data_fech_col], dayfirst=True, errors='coerce').dt.date
+
+                # --- 2. FILTROS INTERATIVOS ---
+                st.subheader("Filtros da Análise")
+                df_filtrado = df_custos.copy() # Começa com os dados filtrados por custo
+
+                col1_filtro, col2_filtro = st.columns(2)
+
+                # Filtro de Data
+                datas_disponiveis = df_filtrado['DATA_ANALISE'].dropna()
+                if not datas_disponiveis.empty:
+                    min_date = datas_disponiveis.min()
+                    max_date = datas_disponiveis.max()
+                    
+                    data_selecionada = col1_filtro.date_input(
+                        "Filtrar por Data de Fechamento:",
+                        value=(min_date, max_date),
+                        min_value=min_date,
+                        max_value=max_date
+                    )
+                    if len(data_selecionada) == 2:
+                        start_date, end_date = data_selecionada
+                        df_filtrado = df_filtrado[
+                            (df_filtrado['DATA_ANALISE'] >= start_date) & 
+                            (df_filtrado['DATA_ANALISE'] <= end_date)
+                        ]
+
+                # Filtro de Representante
+                representantes_disponiveis = sorted(df_filtrado[rep_col].dropna().unique())
+                if representantes_disponiveis:
+                    reps_selecionados = col2_filtro.multiselect(
+                        "Filtrar por Representante:",
+                        options=representantes_disponiveis,
+                        placeholder="Selecione um ou mais"
+                    )
+                    if reps_selecionados:
+                        df_filtrado = df_filtrado[df_filtrado[rep_col].isin(reps_selecionados)]
                 
-                mesma_cidade_mask = df_custos[cidade_rt_col] == df_custos[cidade_os_col]
-                valor_calculado = (df_custos['DESLOC_KM_NUM'] * df_custos['VALOR_KM_NUM']) - df_custos['ABRANG_NUM']
+                st.markdown("---") # Divisor visual
+
+                if df_filtrado.empty:
+                    st.warning("Nenhum dado encontrado com os filtros selecionados.")
+                    st.stop()
+                
+                # --- 3. Análise e Cálculo de Custos (com dados já filtrados) ---
+                for col in [cidade_os_col, rep_col, tec_col, cidade_rt_col]:
+                    if col in df_filtrado.columns and df_filtrado[col].dtype == 'object':
+                        df_filtrado[col] = df_filtrado[col].str.strip()
+                
+                df_filtrado['DESLOC_KM_NUM'] = safe_to_numeric(df_filtrado[desloc_km_col])
+                df_filtrado['VALOR_KM_NUM'] = safe_to_numeric(df_filtrado[valor_km_col])
+                df_filtrado['ABRANG_NUM'] = safe_to_numeric(df_filtrado[abrang_col])
+                
+                mesma_cidade_mask = df_filtrado[cidade_rt_col] == df_filtrado[cidade_os_col]
+                valor_calculado = (df_filtrado['DESLOC_KM_NUM'] * df_filtrado['VALOR_KM_NUM']) - df_filtrado['ABRANG_NUM']
                 valor_calculado[valor_calculado < 0] = 0 
                 
-                df_custos['VALOR_CALCULADO'] = np.where(mesma_cidade_mask, 0, valor_calculado)
-                df_custos['OBSERVACAO'] = np.where(mesma_cidade_mask, "Custo Zerado (Mesma Cidade)", "")
+                df_filtrado['VALOR_CALCULADO'] = np.where(mesma_cidade_mask, 0, valor_calculado)
+                df_filtrado['OBSERVACAO'] = np.where(mesma_cidade_mask, "Custo Zerado (Mesma Cidade)", "")
                 
-                st.subheader("Ordens com Deslocamento Zerado (Cidade RT = Cidade O.S.)")
-                df_custo_zero = df_custos[mesma_cidade_mask]
+                df_filtrado[data_fech_col] = pd.to_datetime(df_filtrado[data_fech_col], errors='coerce').dt.strftime('%d/%m/%Y')
+
+                st.subheader("Resultados da Análise")
+                st.write("Ordens com Deslocamento Zerado (Cidade RT = Cidade O.S.)")
+                df_custo_zero = df_filtrado[mesma_cidade_mask]
                 if not df_custo_zero.empty:
-                    st.info(f"Encontradas {len(df_custo_zero)} ordens onde a cidade do RT é a mesma da O.S.")
-                    # CORREÇÃO: Exibe a data de fechamento
                     st.dataframe(df_custo_zero[[os_col, data_fech_col, cidade_os_col, cidade_rt_col, rep_col, tec_col, 'VALOR_DESLOC_ORIGINAL', 'VALOR_CALCULADO', 'OBSERVACAO']])
                 else:
-                    st.success("Nenhuma ordem encontrada com a Cidade do RT igual à Cidade da O.S.")
+                    st.info("Nenhuma ordem com Cidade RT = Cidade O.S. nos filtros selecionados.")
 
-                st.subheader("Análise de Duplicidade de Deslocamento")
+                st.write("Análise de Duplicidade de Deslocamento")
                 group_keys = ['DATA_ANALISE', cidade_os_col, rep_col, tec_col]
                 
-                df_custos['is_first'] = ~df_custos.duplicated(subset=group_keys, keep='first')
-                grupos_com_duplicatas = df_custos.groupby(group_keys).filter(lambda x: len(x) > 1)
+                df_filtrado['is_first'] = ~df_filtrado.duplicated(subset=group_keys, keep='first')
+                grupos_com_duplicatas = df_filtrado.groupby(group_keys).filter(lambda x: len(x) > 1)
                 
                 if grupos_com_duplicatas.empty:
-                    st.success("✅ Nenhuma duplicidade de deslocamento encontrada nos dados carregados.")
+                    st.success("✅ Nenhuma duplicidade de deslocamento encontrada nos filtros selecionados.")
                 else:
                     grupos_com_duplicatas['VALOR_CALCULADO_AJUSTADO'] = np.where(grupos_com_duplicatas['is_first'], grupos_com_duplicatas['VALOR_CALCULADO'], 0)
                     grupos_com_duplicatas['OBSERVACAO'] = np.where(grupos_com_duplicatas['is_first'], grupos_com_duplicatas['OBSERVACAO'], "Duplicidade (Custo Zerado)")
-
-                    st.warning(f"Foram encontradas {len(grupos_com_duplicatas)} ordens em grupos com potencial de duplicidade.")
                     
                     df_resultado_final = grupos_com_duplicatas.sort_values(by=group_keys + [os_col])
-                    # CORREÇÃO: Exibe a data de fechamento
                     cols_to_show = [os_col, data_fech_col, cidade_os_col, rep_col, tec_col, 'VALOR_DESLOC_ORIGINAL', 'VALOR_CALCULADO_AJUSTADO', 'OBSERVACAO']
                     
                     st.dataframe(df_resultado_final[cols_to_show])
@@ -331,7 +379,7 @@ if st.session_state.df_pagamento is not None:
                     )
 
             else:
-                st.error("ERRO: Para usar esta análise, a planilha de pagamento precisa conter todas as seguintes colunas: 'OS', 'Data de Fechamento', 'Cidade O.S.', 'Cidade RT', 'Representante', 'Técnico', 'Valor Deslocamento', 'Deslocamento', 'Valor KM RT', 'AC Abrangência RT'.")
+                st.error("ERRO: Para usar esta análise, a planilha de pagamento precisa conter todas as seguintes colunas: 'OS', 'Data de Fechamento', 'Cidade O.S.', 'Cidade RT', 'Representante', 'Técnico', 'Valor Deslocamento', 'Deslocamento', 'Valor KM RT', 'AC Abrangência RT', 'Valor Extra', e 'Pedágio'.")
 
         except Exception as e:
             st.error(f"Ocorreu um erro inesperado no Analisador de Custos. Detalhe: {e}")
