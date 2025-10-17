@@ -182,3 +182,50 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                         dist_atual = df_dist[df_dist['Representante']==rt_atual]['Distancia (km)'].values
                         dist_atual = dist_atual[0] if len(dist_atual)>0 else float('inf')
                         st.write(f"OS {ordem[0]} | RT Atual: {rt_atual} ({dist_atual:.1f} km) | Sugestão: {rt_sugerido['Representante']} ({rt_sugerido['Distancia (km)']:.1f} km)")
+# --- CHAT DE IA ---
+st.markdown("---")
+st.header("💬 Converse com a IA para análises personalizadas")
+for message in st.session_state.display_history:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+if prompt := st.chat_input("Faça uma pergunta específica..."):
+    st.session_state.display_history.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    
+    # Decide qual dataframe usar
+    keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
+    df_type = 'chat'
+    if any(keyword in prompt.lower() for keyword in keywords_mapeamento) and st.session_state.df_mapeamento is not None:
+        df_type = 'mapeamento'
+    elif st.session_state.df_dados is not None:
+        df_type = 'dados'
+
+    with st.chat_message("assistant"):
+        if df_type in ['dados', 'mapeamento']:
+            with st.spinner(f"Analisando no arquivo de '{df_type}'..."):
+                df_hash = pd.util.hash_pandas_object(st.session_state.get(f"df_{df_type}")).sum()
+                resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
+                
+                if erro == "PERGUNTA_INVALIDA":
+                    response_text = "Desculpe, só posso responder a perguntas relacionadas aos dados da planilha carregada."
+                elif erro:
+                    st.error(erro)
+                    response_text = "Desculpe, não consegui analisar os dados."
+                else:
+                    if isinstance(resultado_analise, (pd.Series, pd.DataFrame)):
+                        st.write(f"Resultado da busca na base de '{df_type}':")
+                        st.dataframe(resultado_analise)
+                        response_text = "A informação que você pediu está na tabela acima."
+                    else:
+                        response_text = f"O resultado da sua análise é: **{resultado_analise}**"
+                st.markdown(response_text)
+        else:
+            # Chat genérico (sem dados)
+            with st.spinner("Pensando..."):
+                response = st.session_state.chat.send_message(prompt)
+                response_text = response.text
+                st.markdown(response_text)
+
+    st.session_state.display_history.append({"role": "assistant", "content": response_text})
