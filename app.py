@@ -100,7 +100,7 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-# --- DASHBOARD ---
+# --- DASHBOARD PRINCIPAL ---
 if st.session_state.df_dados is not None:
     st.markdown("---")
     st.header("📊 Dashboard de Análise de OS")
@@ -111,41 +111,71 @@ if st.session_state.df_dados is not None:
     city_col = next((col for col in df_dados.columns if 'cidade agendamento' in col.lower()), None)
     tipo_fechamento_col = next((col for col in df_dados.columns if 'tipo de fechamento' in col.lower()), None)
 
-    st.subheader("Filtros de Dashboard")
-    status_opcoes = ["Todos"] + sorted(df_dados[status_col].dropna().unique())
-    tipo_fechamento_opcoes = ["Todos"] + sorted(df_dados[tipo_fechamento_col].dropna().unique())
-    status_selecionado = st.selectbox("Filtrar por Status:", status_opcoes)
-    tipo_fechamento_selecionado = st.selectbox("Filtrar por Tipo de Fechamento:", tipo_fechamento_opcoes)
+    # --- Filtros ---
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        status_opcoes = ["Todos"] + sorted(df_dados[status_col].dropna().unique())
+        status_selecionado = st.selectbox("Filtrar por Status:", status_opcoes)
+    with col_f2:
+        cidade_opcoes = ["Todos"] + sorted(df_dados[city_col].dropna().unique())
+        cidade_selecionada = st.selectbox("Filtrar por Cidade:", cidade_opcoes)
 
     df_filtrado_dash = df_dados.copy()
-    if status_selecionado != "Todos": df_filtrado_dash = df_filtrado_dash[df_filtrado_dash[status_col]==status_selecionado]
-    if tipo_fechamento_selecionado != "Todos": df_filtrado_dash = df_filtrado_dash[df_filtrado_dash[tipo_fechamento_col]==tipo_fechamento_selecionado]
+    if status_selecionado != "Todos":
+        df_filtrado_dash = df_filtrado_dash[df_filtrado_dash[status_col]==status_selecionado]
+    if cidade_selecionada != "Todos":
+        df_filtrado_dash = df_filtrado_dash[df_filtrado_dash[city_col]==cidade_selecionada]
 
-    # --- Gráficos por RT ---
-    if rep_col:
-        st.write("📊 Ordens por RT")
-        st.bar_chart(df_filtrado_dash[rep_col].value_counts().nlargest(10))
+    col1, col2 = st.columns(2)
+    with col1:
+        if status_col and city_col:
+            st.write("Ordens Agendadas por Cidade (Top 10)")
+            st.bar_chart(df_filtrado_dash[df_filtrado_dash[status_col]=='Agendada'][city_col].value_counts().nlargest(10))
+        if status_col and rep_col:
+            st.write("Ordens Realizadas por RT (Top 10)")
+            st.bar_chart(df_filtrado_dash[df_filtrado_dash[status_col]=='Realizada'][rep_col].value_counts().nlargest(10))
+    with col2:
+        if rep_col:
+            st.write("Total de Ordens por RT (Top 10)")
+            st.bar_chart(df_filtrado_dash[rep_col].value_counts().nlargest(10))
+        if tipo_fechamento_col and rep_col:
+            st.write("Indisponibilidades por RT (Top 10)")
+            st.bar_chart(df_filtrado_dash[df_filtrado_dash[tipo_fechamento_col]=='Visita Improdutiva'][rep_col].value_counts().nlargest(10))
 
-    # --- Visões específicas adicionais ---
+    with st.expander("Ver tabela completa com filtros"):
+        st.dataframe(df_filtrado_dash)
+
+# --- VISÕES ESPECÍFICAS ADICIONAIS ---
+if st.session_state.df_dados is not None:
+    st.markdown("---")
     st.subheader("📌 Visões Específicas")
+
     # Realizada - Serviços realizados
     df_realizada_servicos = df_dados[(df_dados[status_col]=='Realizada') & (df_dados[tipo_fechamento_col]=='Serviços realizados')]
     st.write("✅ Ordens Realizadas - Serviços realizados")
-    st.bar_chart(df_realizada_servicos[rep_col].value_counts())
+    st.bar_chart(df_realizada_servicos[rep_col].value_counts().nlargest(15))
 
     # Realizada - Serviços parcialmente realizados
     df_realizada_parcial = df_dados[(df_dados[status_col]=='Realizada') & (df_dados[tipo_fechamento_col]=='Serviços parcialmente realizados')]
     st.write("✅ Ordens Realizadas - Serviços parcialmente realizados")
-    st.bar_chart(df_realizada_parcial[rep_col].value_counts())
+    st.bar_chart(df_realizada_parcial[rep_col].value_counts().nlargest(15))
 
-    # Não realizadas com tipos problemáticos
+    # Não realizadas - Fechamentos problemáticos
     tipos_nao_realizadas = ['Indisponibilidade técnica', 'Visita Improdutiva', 'Reagendamento solicitado', 'Não comparecimento do técnico']
-    df_nao_realizadas = df_dados[(df_dados[status_col]!='Realizada') & (df_dados[tipo_fechamento_col].isin(tipos_nao_realizadas))]
-    st.write("❌ Ordens Não Realizadas - Fechamentos problemáticos")
-    st.bar_chart(df_nao_realizadas[rep_col].value_counts())
 
-    with st.expander("Ver tabela completa com filtros"):
-        st.dataframe(df_filtrado_dash)
+    col1, col2 = st.columns(2)
+
+    with col1:
+        fechamento1 = st.selectbox("Filtrar gráfico 1 - Tipo de Fechamento Problemático", tipos_nao_realizadas, key='fech1')
+        df_nao_real1 = df_dados[(df_dados[status_col]!='Realizada') & (df_dados[tipo_fechamento_col]==fechamento1)]
+        st.write(f"❌ {fechamento1} - Top 15 RTs")
+        st.bar_chart(df_nao_real1[rep_col].value_counts().nlargest(15))
+
+    with col2:
+        fechamento2 = st.selectbox("Filtrar gráfico 2 - Tipo de Fechamento Problemático", tipos_nao_realizadas, key='fech2')
+        df_nao_real2 = df_dados[(df_dados[status_col]!='Realizada') & (df_dados[tipo_fechamento_col]==fechamento2)]
+        st.write(f"❌ {fechamento2} - Top 15 RTs")
+        st.bar_chart(df_nao_real2[rep_col].value_counts().nlargest(15))
 
 # --- MAPA ---
 if st.session_state.df_mapeamento is not None:
@@ -163,7 +193,7 @@ if st.session_state.df_mapeamento is not None:
 
         df_filtrado = df_map.copy()
         if cidade_selecionada != "Todos": df_filtrado = df_filtrado[df_filtrado[city_col_map]==cidade_selecionada]
-        if rep_selecionado != "Todos": df_filtrado = df_filtrado[df_filtrado[rep_col_map]==rep_selecionado]
+        if rep_selecionado != "Todos": df_filtrado = df_filtrado[df_map[rep_col_map]==rep_selecionado]
 
         st.dataframe(df_filtrado)
         map_data = df_filtrado.rename(columns={lat_col:'lat', lon_col:'lon'})
@@ -189,17 +219,19 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
         if not all([os_id_col, os_cliente_col, os_city_col, os_rep_col, os_status_col, os_date_col]):
             st.warning("Colunas necessárias não encontradas no arquivo de agendamentos.")
         else:
-            df_agendadas = df_dados_otim[df_dados_otim[os_status_col]=='Agendada'].copy()
-            cidades_opcoes_otim = ["Todos"] + sorted(df_agendadas[os_city_col].dropna().unique())
+            cidades_opcoes_otim = ["Todos"] + sorted(df_dados_otim[os_city_col].dropna().unique())
             cidade_selecionada_otim = st.selectbox("Selecione uma cidade:", cidades_opcoes_otim)
 
-            if cidade_selecionada_otim!="Todos":
-                ordens_na_cidade = df_agendadas[df_agendadas[os_city_col]==cidade_selecionada_otim]
+            if cidade_selecionada_otim=="Todos":
+                ordens_na_cidade = pd.DataFrame()  # Não mostrar tudo por padrão
             else:
-                ordens_na_cidade = pd.DataFrame()  # não mostrar nada se "Todos" estiver selecionado
+                ordens_na_cidade = df_dados_otim[df_dados_otim[os_city_col]==cidade_selecionada_otim]
 
-            if not ordens_na_cidade.empty:
+            if ordens_na_cidade.empty:
+                st.info("Nenhuma OS agendada encontrada.")
+            else:
                 st.dataframe(ordens_na_cidade[[os_id_col, os_cliente_col, os_date_col, os_rep_col]])
+                # Proximidade (exemplo com primeira cidade disponível)
                 map_city_col, map_lat_col, map_lon_col, map_rep_col_map, map_rep_lat_col, map_rep_lon_col = 'nm_cidade_atendimento', 'cd_latitude_atendimento', 'cd_longitude_atendimento', 'nm_representante', 'cd_latitude_representante', 'cd_longitude_representante'
                 for _, ordem in ordens_na_cidade.iterrows():
                     cidade_info = df_map_otim[df_map_otim[map_city_col]==ordem[os_city_col]]
