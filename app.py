@@ -139,29 +139,29 @@ if st.session_state.df_dados is not None:
     st.subheader("Filtros de Análise")
     col_filtro1, col_filtro2 = st.columns(2)
     
-    status_selecionados = []
+    status_selecionado = None
     if status_col:
         status_disponiveis = sorted(df_analise[status_col].dropna().unique())
-        status_selecionados = col_filtro1.multiselect(
+        opcoes_status = ["Exibir Todos"] + status_disponiveis
+        status_selecionado = col_filtro1.selectbox(
             "Filtrar por Status:",
-            options=status_disponiveis,
-            default=[s for s in ['Realizada', 'Não Realizada', 'Cancelada', 'Agendada'] if s in status_disponiveis]
+            options=opcoes_status
         )
 
-    fechamentos_selecionados = []
+    fechamento_selecionado = None
     if motivo_fechamento_col:
         fechamentos_disponiveis = sorted(df_analise[motivo_fechamento_col].dropna().unique())
-        fechamentos_selecionados = col_filtro2.multiselect(
+        opcoes_fechamento = ["Exibir Todos"] + fechamentos_disponiveis
+        fechamento_selecionado = col_filtro2.selectbox(
             "Filtrar por Tipo de Fechamento:",
-            options=fechamentos_disponiveis,
-            default=fechamentos_disponiveis
+            options=opcoes_fechamento
         )
 
     # Aplicar filtros ao dataframe de análise
-    if status_selecionados and status_col:
-        df_analise = df_analise[df_analise[status_col].isin(status_selecionados)]
-    if fechamentos_selecionados and motivo_fechamento_col:
-        df_analise = df_analise[df_analise[motivo_fechamento_col].isin(fechamentos_selecionados)]
+    if status_selecionado and status_selecionado != "Exibir Todos" and status_col:
+        df_analise = df_analise[df_analise[status_col] == status_selecionado]
+    if fechamento_selecionado and fechamento_selecionado != "Exibir Todos" and motivo_fechamento_col:
+        df_analise = df_analise[df_analise[motivo_fechamento_col] == fechamento_selecionado]
 
     # --- Gráficos ---
     st.subheader("Análises Gráficas")
