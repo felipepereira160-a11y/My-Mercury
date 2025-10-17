@@ -77,6 +77,15 @@ def carregar_dataframe(arquivo, separador_padrao=','):
         return pd.read_csv(arquivo, encoding='latin-1', sep=outro_sep, on_bad_lines='skip')
     return None
 
+# --- Função para gráficos de fechamentos problemáticos ---
+def grafico_fechamentos_problematicos(df, status_col, tipo_fechamento_col, rep_col, fechamento_selecionado, top_n=15):
+    df_filtrado = df[(df[status_col] != 'Realizada') & (df[tipo_fechamento_col] == fechamento_selecionado)]
+    if df_filtrado.empty:
+        return pd.DataFrame(columns=[rep_col, 'Quantidade'])
+    df_contagem = df_filtrado.groupby(rep_col).size().reset_index(name='Quantidade')
+    df_contagem = df_contagem.sort_values(by='Quantidade', ascending=False).head(top_n)
+    return df_contagem
+
 # --- Barra Lateral ---
 with st.sidebar:
     st.header("Base de Conhecimento")
@@ -167,15 +176,21 @@ if st.session_state.df_dados is not None:
 
     with col1:
         fechamento1 = st.selectbox("Filtrar gráfico 1 - Tipo de Fechamento Problemático", tipos_nao_realizadas, key='fech1')
-        df_nao_real1 = df_dados[(df_dados[status_col]!='Realizada') & (df_dados[tipo_fechamento_col]==fechamento1)]
+        df_graf1 = grafico_fechamentos_problematicos(df_dados, status_col, tipo_fechamento_col, rep_col, fechamento1)
         st.write(f"❌ {fechamento1} - Top 15 RTs")
-        st.bar_chart(df_nao_real1[rep_col].value_counts().nlargest(15))
+        if not df_graf1.empty:
+            st.bar_chart(df_graf1.set_index(rep_col)['Quantidade'])
+        else:
+            st.info("Nenhuma ocorrência encontrada.")
 
     with col2:
         fechamento2 = st.selectbox("Filtrar gráfico 2 - Tipo de Fechamento Problemático", tipos_nao_realizadas, key='fech2')
-        df_nao_real2 = df_dados[(df_dados[status_col]!='Realizada') & (df_dados[tipo_fechamento_col]==fechamento2)]
+        df_graf2 = grafico_fechamentos_problematicos(df_dados, status_col, tipo_fechamento_col, rep_col, fechamento2)
         st.write(f"❌ {fechamento2} - Top 15 RTs")
-        st.bar_chart(df_nao_real2[rep_col].value_counts().nlargest(15))
+        if not df_graf2.empty:
+            st.bar_chart(df_graf2.set_index(rep_col)['Quantidade'])
+        else:
+            st.info("Nenhuma ocorrência encontrada.")
 
 # --- MAPA ---
 if st.session_state.df_mapeamento is not None:
@@ -284,11 +299,4 @@ if prompt := st.chat_input("Faça uma pergunta específica..."):
                     st.dataframe(resultado)
                     response_text = "Resultado exibido na tabela acima."
                 else:
-                    response_text = f"Resultado: {resultado}"
-            st.markdown(response_text)
-        else:
-            response = st.session_state.chat.send_message(prompt)
-            st.markdown(response.text)
-            response_text = response.text
-    
-    st.session_state.display_history.append({"role":"assistant","content":response_text})
+                    response_text = f"Resultado: {resultado
