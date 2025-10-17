@@ -286,7 +286,7 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                     else:
                         st.subheader("Ou Selecione uma Cidade para Otimizar em Lote")
                         lista_cidades_agendadas = sorted(df_agendadas[os_city_col].dropna().unique())
-                        cidade_selecionada_otim = st.selectbox("Selecione uma cidade:", options=lista_cidades_agendadas, index=None, placeholder="Escolha uma cidade")
+                        cidade_selecionada_otim = st.selectbox("Selecione uma cidade:", options=lista_cidades_agendadas, index=None, placeholder="Selecione...")
                         if cidade_selecionada_otim:
                             ordens_na_cidade = df_agendadas[df_agendadas[os_city_col] == cidade_selecionada_otim]
                     
