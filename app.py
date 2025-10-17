@@ -182,35 +182,40 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
             cidade_selecionada = st.selectbox("Cidade:", cidade_opcoes)
             os_selecionada = st.selectbox("Número da O.S:", os_opcoes)
 
-            ordens_filtradas = df_agendadas.copy()
-            if cidade_selecionada: ordens_filtradas = ordens_filtradas[ordens_filtradas[os_city_col]==cidade_selecionada]
-            if os_selecionada: ordens_filtradas = ordens_filtradas[ordens_filtradas[os_id_col].astype(str)==os_selecionada]
+            # --- MOSTRAR SOMENTE SE HOUVER FILTRO ---
+            if cidade_selecionada or os_selecionada:
+                ordens_filtradas = df_agendadas.copy()
+                if cidade_selecionada: 
+                    ordens_filtradas = ordens_filtradas[ordens_filtradas[os_city_col]==cidade_selecionada]
+                if os_selecionada: 
+                    ordens_filtradas = ordens_filtradas[ordens_filtradas[os_id_col].astype(str)==os_selecionada]
 
-            if ordens_filtradas.empty:
-                st.info("Nenhuma OS encontrada com o filtro selecionado.")
-            else:
-                st.dataframe(ordens_filtradas[[os_id_col, os_cliente_col, os_date_col, os_rep_col]])
+                if ordens_filtradas.empty:
+                    st.info("Nenhuma OS encontrada com o filtro selecionado.")
+                else:
+                    st.dataframe(ordens_filtradas[[os_id_col, os_cliente_col, os_date_col, os_rep_col]])
 
-                # Cálculo de proximidade com RTs
-                map_city_col, map_lat_col, map_lon_col, map_rep_col_map, map_rep_lat_col, map_rep_lon_col = 'nm_cidade_atendimento', 'cd_latitude_atendimento', 'cd_longitude_atendimento', 'nm_representante', 'cd_latitude_representante', 'cd_longitude_representante'
-                for _, ordem in ordens_filtradas.iterrows():
-                    cidade_info = df_map_otim[df_map_otim[map_city_col]==ordem[os_city_col]]
-                    if not cidade_info.empty:
-                        ponto_atendimento = (cidade_info.iloc[0][map_lat_col], cidade_info.iloc[0][map_lon_col])
-                        distancias = [{'Representante': rt_map[map_rep_col_map], 'Distancia (km)': haversine((rt_map[map_rep_lat_col], rt_map[map_rep_lon_col]), ponto_atendimento, unit=Unit.KILOMETERS)} for _, rt_map in df_map_otim.iterrows()]
-                        df_distancias = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
-                        rt_sugerido = df_distancias.loc[df_distancias['Distancia (km)'].idxmin()]
-                        with st.expander(f"OS: {ordem[os_id_col]} | Cliente: {ordem[os_cliente_col]}"):
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.info(f"RT Agendado: {ordem[os_rep_col]}")
-                                dist_atual_df = df_distancias[df_distancias['Representante']==ordem[os_rep_col]]
-                                dist_atual = dist_atual_df['Distancia (km)'].values[0] if not dist_atual_df.empty else float('inf')
-                                st.metric("Distância do RT Agendado", f"{dist_atual:.1f} km")
-                            with col2:
-                                st.success(f"Sugestão (Mais Próximo): {rt_sugerido['Representante']}")
-                                economia = dist_atual - rt_sugerido['Distancia (km)']
-                                st.metric("Distância do RT Sugerido", f"{rt_sugerido['Distancia (km)']:.1f} km", delta=f"{economia:.1f} km economia" if economia>0 and economia!=float('inf') else None)
+                    # Cálculo de proximidade com RTs
+                    map_city_col, map_lat_col, map_lon_col, map_rep_col_map, map_rep_lat_col, map_rep_lon_col = 'nm_cidade_atendimento', 'cd_latitude_atendimento', 'cd_longitude_atendimento', 'nm_representante', 'cd_latitude_representante', 'cd_longitude_representante'
+                    for _, ordem in ordens_filtradas.iterrows():
+                        cidade_info = df_map_otim[df_map_otim[map_city_col]==ordem[os_city_col]]
+                        if not cidade_info.empty:
+                            ponto_atendimento = (cidade_info.iloc[0][map_lat_col], cidade_info.iloc[0][map_lon_col])
+                            distancias = [{'Representante': rt_map[map_rep_col_map], 'Distancia (km)': haversine((rt_map[map_rep_lat_col], rt_map[map_rep_lon_col]), ponto_atendimento, unit=Unit.KILOMETERS)} for _, rt_map in df_map_otim.iterrows()]
+                            df_distancias = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
+                            rt_sugerido = df_distancias.loc[df_distancias['Distancia (km)'].idxmin()]
+                            with st.expander(f"OS: {ordem[os_id_col]} | Cliente: {ordem[os_cliente_col]}"):
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.info(f"RT Agendado: {ordem[os_rep_col]}")
+                                    dist_atual_df = df_distancias[df_distancias['Representante']==ordem[os_rep_col]]
+                                    dist_atual = dist_atual_df['Distancia (km)'].values[0] if not dist_atual_df.empty else float('inf')
+                                    st.metric("Distância do RT Agendado", f"{dist_atual:.1f} km")
+                                with col2:
+                                    st.success(f"Sugestão (Mais Próximo): {rt_sugerido['Representante']}")
+                                    economia = dist_atual - rt_sugerido['Distancia (km)']
+                                    st.metric("Distância do RT Sugerido", f"{rt_sugerido['Distancia (km)']:.1f} km", delta=f"{economia:.1f} km economia" if economia>0 and economia!=float('inf') else None)
+
 
 # --- CHAT ---
 st.markdown("---")
