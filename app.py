@@ -50,12 +50,15 @@ if "chat" not in st.session_state and model:
     st.session_state.chat = model.start_chat(history=[])
 if "display_history" not in st.session_state:
     st.session_state.display_history = []
-if 'df_dados' not in st.session_state:
+if 'df_dados' not in st.session_state: # Para Agendamentos
     st.session_state.df_dados = None
 if 'df_mapeamento' not in st.session_state:
     st.session_state.df_mapeamento = None
 if 'df_devolucao' not in st.session_state:
     st.session_state.df_devolucao = None
+if 'df_pagamento' not in st.session_state: # Para a base de pagamento/duplicidade
+    st.session_state.df_pagamento = None
+
 
 # --- Funções ---
 @st.cache_data
@@ -94,9 +97,11 @@ def executar_analise_pandas(_df_hash, pergunta, df_type):
         return None, f"Ocorreu um erro ao executar a análise: {e}"
 
 def carregar_dataframe(arquivo, separador_padrao=','):
-    if arquivo.name.endswith('.xlsx'):
+    # CORREÇÃO: Adicionado suporte para .xls
+    nome_arquivo = arquivo.name.lower()
+    if nome_arquivo.endswith(('.xlsx', '.xls')):
         return pd.read_excel(arquivo)
-    elif arquivo.name.endswith('.csv'):
+    elif nome_arquivo.endswith('.csv'):
         try:
             arquivo.seek(0)
             df = pd.read_csv(arquivo, encoding='latin-1', sep=separador_padrao, on_bad_lines='skip')
@@ -112,7 +117,10 @@ def carregar_dataframe(arquivo, separador_padrao=','):
 # --- Barra Lateral ---
 with st.sidebar:
     st.header("Base de Conhecimento")
-    data_file = st.sidebar.file_uploader("1. Upload de Agendamentos (OS)", type=["csv", "xlsx"])
+    # CORREÇÃO: Adicionado 'xls' aos tipos de arquivo permitidos
+    tipos_permitidos = ["csv", "xlsx", "xls"]
+    
+    data_file = st.sidebar.file_uploader("1. Upload de Agendamentos (OS)", type=tipos_permitidos)
     if data_file:
         try:
             st.session_state.df_dados = carregar_dataframe(data_file, separador_padrao=';')
@@ -121,7 +129,7 @@ with st.sidebar:
             st.error(f"Erro nos dados: {e}")
 
     st.markdown("---")
-    map_file = st.sidebar.file_uploader("2. Upload do Mapeamento de RT (Fixo)", type=["csv", "xlsx"])
+    map_file = st.sidebar.file_uploader("2. Upload do Mapeamento de RT (Fixo)", type=tipos_permitidos)
     if map_file:
         try:
             st.session_state.df_mapeamento = carregar_dataframe(map_file, separador_padrao=',')
@@ -130,13 +138,23 @@ with st.sidebar:
             st.error(f"Erro no mapeamento: {e}")
 
     st.markdown("---")
-    devolucao_file = st.sidebar.file_uploader("3. Upload de Itens a Instalar (Devolução)", type=["csv", "xlsx"])
+    devolucao_file = st.sidebar.file_uploader("3. Upload de Itens a Instalar (Devolução)", type=tipos_permitidos)
     if devolucao_file:
         try:
             st.session_state.df_devolucao = carregar_dataframe(devolucao_file, separador_padrao=';')
             st.success("Base de devolução carregada!")
         except Exception as e:
             st.error(f"Erro na base de devolução: {e}")
+            
+    st.markdown("---")
+    pagamento_file = st.sidebar.file_uploader("4. Upload da Base de Pagamento (Duplicidade)", type=tipos_permitidos)
+    if pagamento_file:
+        try:
+            st.session_state.df_pagamento = carregar_dataframe(pagamento_file, separador_padrao=';')
+            st.success("Base de pagamento carregada!")
+        except Exception as e:
+            st.error(f"Erro na base de pagamento: {e}")
+
 
     if st.button("Limpar Tudo"):
         st.session_state.clear()
@@ -144,7 +162,7 @@ with st.sidebar:
 
 # --- Corpo Principal ---
 
-# --- DASHBOARD DE ANÁLISE DE ORDENS DE SERVIÇO ---
+# --- DASHBOARD DE ANÁLISE DE ORDENS DE SERVIÇO (Usa df_dados)---
 if st.session_state.df_dados is not None:
     st.markdown("---")
     st.header("📊 Dashboard de Análise de Ordens de Serviço")
@@ -176,7 +194,6 @@ if st.session_state.df_dados is not None:
         df_analise = df_analise[df_analise[motivo_fechamento_col] == fechamento_selecionado]
 
     st.subheader("Análises Gráficas")
-    # ... (código dos gráficos permanece o mesmo)
     col1, col2 = st.columns(2)
     with col1:
         st.write("**Ordens Agendadas por Cidade (Top 10)**")
@@ -226,13 +243,14 @@ if st.session_state.df_dados is not None:
     with st.expander("Ver tabela de dados completa (original, sem filtros)"):
         st.dataframe(df_dados_original)
 
-# --- INÍCIO DA FERRAMENTA ATUALIZADA: ANALISADOR DE CUSTOS E DUPLICIDADE ---
-if st.session_state.df_dados is not None:
+
+# --- ANALISADOR DE CUSTOS E DUPLICIDADE (Usa df_pagamento) ---
+if st.session_state.df_pagamento is not None:
     st.markdown("---")
     st.header("🔎 Analisador de Custos e Duplicidade de Deslocamento")
-    with st.expander("Clique aqui para analisar custos e duplicidades", expanded=False):
+    with st.expander("Clique aqui para analisar custos e duplicidades da Base de Pagamento", expanded=True):
         try:
-            df_custos = st.session_state.df_dados.copy()
+            df_custos = st.session_state.df_pagamento.copy()
 
             # --- Identificação flexível das colunas ---
             os_col = next((col for col in df_custos.columns if 'os' in col.lower()), None)
@@ -253,24 +271,18 @@ if st.session_state.df_dados is not None:
                 df_custos['DATA_ANALISE'] = pd.to_datetime(df_custos[data_ag_col], dayfirst=True, errors='coerce').dt.date
                 df_custos.dropna(subset=['DATA_ANALISE', cidade_os_col, cidade_rt_col], inplace=True)
                 
-                # Limpeza robusta das colunas de valores
                 df_custos['VALOR_DESLOC_ORIGINAL'] = safe_to_numeric(df_custos[valor_desl_col])
                 df_custos['DESLOC_KM_NUM'] = safe_to_numeric(df_custos[desloc_km_col])
                 df_custos['VALOR_KM_NUM'] = safe_to_numeric(df_custos[valor_km_col])
                 df_custos['ABRANG_NUM'] = safe_to_numeric(df_custos[abrang_col])
                 
-                # Aplica a regra de negócio para o cálculo
-                # Condição: Cidade RT == Cidade OS -> Custo é 0
                 mesma_cidade_mask = df_custos[cidade_rt_col].str.strip().str.lower() == df_custos[cidade_os_col].str.strip().str.lower()
-                
-                # Cálculo do deslocamento conforme a fórmula
                 valor_calculado = (df_custos['DESLOC_KM_NUM'] * df_custos['VALOR_KM_NUM']) - df_custos['ABRANG_NUM']
-                valor_calculado[valor_calculado < 0] = 0 # O valor não pode ser negativo
+                valor_calculado[valor_calculado < 0] = 0 
                 
                 df_custos['VALOR_CALCULADO'] = np.where(mesma_cidade_mask, 0, valor_calculado)
                 df_custos['OBSERVACAO'] = np.where(mesma_cidade_mask, "Custo Zerado (Mesma Cidade)", "")
                 
-                # --- 2. Exibição das Ordens com Custo Zero ---
                 st.subheader("Ordens com Deslocamento Zerado (Cidade RT = Cidade O.S.)")
                 df_custo_zero = df_custos[mesma_cidade_mask]
                 if not df_custo_zero.empty:
@@ -279,20 +291,15 @@ if st.session_state.df_dados is not None:
                 else:
                     st.success("Nenhuma ordem encontrada com a Cidade do RT igual à Cidade da O.S.")
 
-                # --- 3. Análise de Duplicidade ---
                 st.subheader("Análise de Duplicidade de Deslocamento")
                 group_keys = ['DATA_ANALISE', cidade_os_col, rep_col, tec_col]
                 
-                # Marca a primeira ocorrência em cada grupo
                 df_custos['is_first'] = ~df_custos.duplicated(subset=group_keys, keep='first')
-                
-                # Filtra apenas os grupos que têm duplicatas
                 grupos_com_duplicatas = df_custos.groupby(group_keys).filter(lambda x: len(x) > 1)
                 
                 if grupos_com_duplicatas.empty:
                     st.success("✅ Nenhuma duplicidade de deslocamento encontrada nos dados carregados.")
                 else:
-                    # Nas duplicatas, o valor calculado deveria ser 0
                     grupos_com_duplicatas['VALOR_CALCULADO_AJUSTADO'] = np.where(grupos_com_duplicatas['is_first'], grupos_com_duplicatas['VALOR_CALCULADO'], 0)
                     grupos_com_duplicatas['OBSERVACAO'] = np.where(grupos_com_duplicatas['is_first'], grupos_com_duplicatas['OBSERVACAO'], "Duplicidade (Custo Zerado)")
 
@@ -303,7 +310,6 @@ if st.session_state.df_dados is not None:
                     
                     st.dataframe(df_resultado_final[cols_to_show])
 
-                    # --- Botão de Download ---
                     csv_duplicatas = convert_df_to_csv(df_resultado_final[cols_to_show])
                     st.download_button(
                         label="📥 Exportar Resultado da Duplicidade (.csv)",
@@ -313,14 +319,12 @@ if st.session_state.df_dados is not None:
                     )
 
             else:
-                st.error("ERRO: Para usar esta análise, a planilha precisa conter todas as seguintes colunas: 'OS', 'Data de Agendamento', 'Cidade O.S.', 'Cidade RT', 'Representante', 'Técnico', 'Valor Deslocamento', 'Deslocamento', 'Valor KM RT', 'AC Abrangência RT'.")
+                st.error("ERRO: Para usar esta análise, a planilha de pagamento precisa conter todas as seguintes colunas: 'OS', 'Data de Agendamento', 'Cidade O.S.', 'Cidade RT', 'Representante', 'Técnico', 'Valor Deslocamento', 'Deslocamento', 'Valor KM RT', 'AC Abrangência RT'.")
 
         except Exception as e:
             st.error(f"Ocorreu um erro inesperado no Analisador de Custos. Detalhe: {e}")
-# --- FIM DA FERRAMENTA ATUALIZADA ---
 
-
-# --- FERRAMENTA DE DEVOLUÇÃO DE ORDENS ---
+# --- FERRAMENTA DE DEVOLUÇÃO DE ORDENS (Usa df_devolucao) ---
 if st.session_state.df_devolucao is not None:
     st.markdown("---")
     st.header("📦 Ferramenta de Devolução de Ordens Vencidas")
@@ -368,11 +372,10 @@ if st.session_state.df_devolucao is not None:
         st.error("ERRO: Verifique se a planilha de devolução contém as colunas 'PrazoInstalacao' e 'ClienteNome'.")
 
 
-# --- FERRAMENTA DE MAPEAMENTO ---
+# --- FERRAMENTA DE MAPEAMENTO (Usa df_mapeamento) ---
 if st.session_state.df_mapeamento is not None:
     st.markdown("---")
     st.header("🗺️ Ferramenta de Mapeamento e Consulta de RT")
-    # ... (código do mapeamento permanece o mesmo)
     df_map = st.session_state.df_mapeamento.copy()
     city_col_map, rep_col_map, lat_col, lon_col, km_col = 'nm_cidade_atendimento', 'nm_representante', 'cd_latitude_atendimento', 'cd_longitude_atendimento', 'qt_distancia_atendimento_km'
     if all(col in df_map.columns for col in [city_col_map, rep_col_map, lat_col, lon_col, km_col]):
@@ -391,11 +394,10 @@ if st.session_state.df_mapeamento is not None:
         if not map_data.empty: st.map(map_data, color='#FF4B4B', size='size')
         else: st.warning("Nenhum resultado com coordenadas para exibir no mapa.")
 
-# --- OTIMIZADOR DE PROXIMIDADE ---
+# --- OTIMIZADOR DE PROXIMIDADE (Usa df_dados e df_mapeamento) ---
 if st.session_state.df_dados is not None and st.session_state.df_mapeamento is not None:
     st.markdown("---")
     with st.expander("🚚 Abrir Otimizador de Proximidade de RT"):
-        # ... (código do otimizador permanece o mesmo)
         try:
             df_dados_otim = st.session_state.df_dados
             df_map_otim = st.session_state.df_mapeamento
