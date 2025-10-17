@@ -225,7 +225,7 @@ if st.session_state.df_devolucao is not None:
     st.header("📦 Ferramenta de Devolução de Ordens Vencidas")
     df_devolucao = st.session_state.df_devolucao.copy()
 
-    date_col_devolucao = next((col for col in df_devolucao.columns if 'datalimiteagendamento' in col.lower().replace(' ', '')), None)
+    date_col_devolucao = next((col for col in df_devolucao.columns if 'prazoinstalacao' in col.lower().replace(' ', '')), None)
     cliente_col_devolucao = next((col for col in df_devolucao.columns if 'clientenome' in col.lower().replace(' ', '')), None)
 
     if date_col_devolucao and cliente_col_devolucao:
@@ -264,7 +264,7 @@ if st.session_state.df_devolucao is not None:
                     mime='text/csv',
                 )
     else:
-        st.error("ERRO: Verifique se a planilha de devolução contém as colunas 'DataLimiteAgendamento' e 'ClienteNome'.")
+        st.error("ERRO: Verifique se a planilha de devolução contém as colunas 'PrazoInstalacao' e 'ClienteNome'.")
 
 
 # --- FERRAMENTA DE MAPEAMENTO ---
