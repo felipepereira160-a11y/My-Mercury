@@ -282,16 +282,19 @@ if st.session_state.df_pagamento is not None:
                     (df_custos['PEDAGIO_NUM'] > 0)
                 )
                 df_custos = df_custos[filtro_custos_positivos_mask].copy()
+                
+                if df_custos.empty:
+                    st.success("✅ Nenhuma ordem com custos de deslocamento, extra ou pedágio foi encontrada para análise.")
+                    st.stop()
 
                 df_custos['DATA_ANALISE'] = pd.to_datetime(df_custos[data_fech_col], dayfirst=True, errors='coerce').dt.date
 
                 # --- 2. FILTROS INTERATIVOS ---
                 st.subheader("Filtros da Análise")
-                df_filtrado = df_custos.copy() # Começa com os dados filtrados por custo
+                df_filtrado = df_custos.copy()
 
                 col1_filtro, col2_filtro = st.columns(2)
 
-                # Filtro de Data
                 datas_disponiveis = df_filtrado['DATA_ANALISE'].dropna()
                 if not datas_disponiveis.empty:
                     min_date = datas_disponiveis.min()
@@ -309,8 +312,7 @@ if st.session_state.df_pagamento is not None:
                             (df_filtrado['DATA_ANALISE'] >= start_date) & 
                             (df_filtrado['DATA_ANALISE'] <= end_date)
                         ]
-
-                # Filtro de Representante
+                
                 representantes_disponiveis = sorted(df_filtrado[rep_col].dropna().unique())
                 if representantes_disponiveis:
                     reps_selecionados = col2_filtro.multiselect(
@@ -321,7 +323,7 @@ if st.session_state.df_pagamento is not None:
                     if reps_selecionados:
                         df_filtrado = df_filtrado[df_filtrado[rep_col].isin(reps_selecionados)]
                 
-                st.markdown("---") # Divisor visual
+                st.markdown("---")
 
                 if df_filtrado.empty:
                     st.warning("Nenhum dado encontrado com os filtros selecionados.")
@@ -383,6 +385,7 @@ if st.session_state.df_pagamento is not None:
 
         except Exception as e:
             st.error(f"Ocorreu um erro inesperado no Analisador de Custos. Detalhe: {e}")
+
 
 # --- FERRAMENTA DE DEVOLUÇÃO DE ORDENS (Usa df_devolucao) ---
 if st.session_state.df_devolucao is not None:
@@ -458,53 +461,78 @@ if st.session_state.df_mapeamento is not None:
 
 # --- OTIMIZADOR DE PROXIMIDADE (Usa df_dados e df_mapeamento) ---
 if st.session_state.df_dados is not None and st.session_state.df_mapeamento is not None:
-    # Código inalterado...
     st.markdown("---")
     with st.expander("🚚 Abrir Otimizador de Proximidade de RT"):
         try:
             df_dados_otim = st.session_state.df_dados
             df_map_otim = st.session_state.df_mapeamento
+            
+            # --- Identificação de colunas ---
             os_id_col = next((col for col in df_dados_otim.columns if 'número da o.s' in col.lower() or 'numeropedido' in col.lower() or 'os' in col.lower()), None)
             os_cliente_col = next((col for col in df_dados_otim.columns if 'cliente' in col.lower() and 'id' not in col.lower()), None)
             os_date_col = next((col for col in df_dados_otim.columns if 'data agendamento' in col.lower()), None)
             os_city_col = next((col for col in df_dados_otim.columns if 'cidade agendamento' in col.lower() or 'cidade o.s.' in col.lower()), None)
-            os_rep_col = next((col for col in df_dados_otim.columns if 'representante técnico' in col.lower() or 'representante' in col.lower() and 'id' not in col.lower()), None)
+            # CORREÇÃO: Lógica aprimorada para garantir que a coluna do NOME seja selecionada
+            os_rep_col = next((col for col in df_dados_otim.columns if 'representante técnico' in col.lower() and 'id' not in col.lower()), None)
+            if not os_rep_col:
+                os_rep_col = next((col for col in df_dados_otim.columns if 'representante' in col.lower() and 'id' not in col.lower()), None)
             os_status_col = next((col for col in df_dados_otim.columns if 'status' in col.lower()), None)
+            
             map_city_col = 'nm_cidade_atendimento'
             map_lat_atendimento_col = 'cd_latitude_atendimento'
             map_lon_atendimento_col = 'cd_longitude_atendimento'
             map_rep_col = 'nm_representante'
             map_rep_lat_col = 'cd_latitude_representante'
             map_rep_lon_col = 'cd_longitude_representante'
+            
             required_cols = [os_id_col, os_cliente_col, os_date_col, os_city_col, os_rep_col, os_status_col]
             if not all(required_cols):
-                st.warning("Para usar o otimizador, a planilha de agendamentos precisa conter colunas com os nomes corretos.")
+                st.warning("Para usar o otimizador, a planilha de agendamentos precisa conter colunas com os nomes corretos (incluindo Status e Representante sem ID).")
             else:
-                df_agendadas = df_dados_otim[df_dados_otim[os_status_col] == 'Agendada'].copy()
-                if df_agendadas.empty:
-                    st.info("Nenhuma ordem 'Agendada' encontrada para otimização.")
+                # NOVO: Filtro de Status interativo
+                st.subheader("Filtro de Status")
+                all_statuses = df_dados_otim[os_status_col].dropna().unique().tolist()
+                
+                # Define os status de interesse como padrão, se existirem na lista
+                default_selection = [s for s in ['Agendada', 'Serviços realizados', 'Parcialmente realizado'] if s in all_statuses]
+
+                status_selecionados = st.multiselect(
+                    "Selecione os status para otimização:",
+                    options=all_statuses,
+                    default=default_selection
+                )
+
+                if not status_selecionados:
+                    st.warning("Por favor, selecione ao menos um status para continuar.")
+                    st.stop()
+
+                df_otimizacao_filtrado = df_dados_otim[df_dados_otim[os_status_col].isin(status_selecionados)].copy()
+
+                if df_otimizacao_filtrado.empty:
+                    st.info(f"Nenhuma ordem com os status selecionados ('{', '.join(status_selecionados)}') foi encontrada.")
                 else:
-                    st.subheader("Buscar Ordem de Serviço Específica")
+                    st.subheader("Buscar Ordem de Serviço Específica (dentro do filtro)")
                     os_pesquisada_num = st.text_input("Digite o Número da O.S. para análise direta:")
                     cidade_selecionada_otim = None
                     ordens_na_cidade = None
                     if os_pesquisada_num:
-                        df_agendadas[os_id_col] = df_agendadas[os_id_col].astype(str)
-                        resultado_busca = df_agendadas[df_agendadas[os_id_col].str.strip() == os_pesquisada_num.strip()]
+                        df_otimizacao_filtrado[os_id_col] = df_otimizacao_filtrado[os_id_col].astype(str)
+                        resultado_busca = df_otimizacao_filtrado[df_otimizacao_filtrado[os_id_col].str.strip() == os_pesquisada_num.strip()]
                         if not resultado_busca.empty:
                             ordens_na_cidade = resultado_busca
                             cidade_selecionada_otim = ordens_na_cidade.iloc[0][os_city_col]
                             st.success(f"O.S. '{os_pesquisada_num}' encontrada! Analisando cidade: {cidade_selecionada_otim}")
                         else:
-                            st.warning(f"O.S. '{os_pesquisada_num}' não encontrada entre as ordens agendadas.")
+                            st.warning(f"O.S. '{os_pesquisada_num}' não encontrada nos status selecionados.")
                     else:
                         st.subheader("Ou Selecione uma Cidade para Otimizar em Lote")
-                        lista_cidades_agendadas = sorted(df_agendadas[os_city_col].dropna().unique())
-                        cidade_selecionada_otim = st.selectbox("Selecione uma cidade:", options=lista_cidades_agendadas, index=None, placeholder="Selecione...")
+                        lista_cidades = sorted(df_otimizacao_filtrado[os_city_col].dropna().unique())
+                        cidade_selecionada_otim = st.selectbox("Selecione uma cidade:", options=lista_cidades, index=None, placeholder="Selecione...")
                         if cidade_selecionada_otim:
-                            ordens_na_cidade = df_agendadas[df_agendadas[os_city_col] == cidade_selecionada_otim]
+                            ordens_na_cidade = df_otimizacao_filtrado[df_otimizacao_filtrado[os_city_col] == cidade_selecionada_otim]
+                    
                     if ordens_na_cidade is not None and not ordens_na_cidade.empty:
-                        st.subheader(f"Ordens 'Agendadas' em {cidade_selecionada_otim}:")
+                        st.subheader(f"Ordens em {cidade_selecionada_otim} (Status: {', '.join(status_selecionados)})")
                         st.dataframe(ordens_na_cidade[[os_id_col, os_cliente_col, os_date_col, os_rep_col]])
                         st.subheader(f"Análise de Proximidade para cada Ordem:")
                         cidade_info = df_map_otim[df_map_otim[map_city_col] == cidade_selecionada_otim]
