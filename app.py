@@ -12,8 +12,8 @@ from datetime import datetime
 st.set_page_config(page_title="Seu Assistente de Dados com IA", page_icon="🧠", layout="wide")
 
 # --- Título ---
-st.title("🧠 Seu Assistente Mercurio com IA")
-st.write("Converse comigo ou faça o upload de seus arquivos!")
+st.title("🧠 Seu Assistente de Dados com IA")
+st.write("Converse comigo ou faça o upload de seus arquivos na barra lateral para começar a analisar!")
 
 # --- Lógica robusta para carregar a chave da API ---
 api_key = None
@@ -165,14 +165,18 @@ with st.sidebar:
 
 # --- DASHBOARD DE ANÁLISE DE ORDENS DE SERVIÇO (Usa df_dados)---
 if st.session_state.df_dados is not None:
-    # Código do dashboard inalterado...
     st.markdown("---")
     st.header("📊 Dashboard de Análise de Ordens de Serviço")
     df_dados_original = st.session_state.df_dados.copy()
     df_analise = df_dados_original.copy()
 
     status_col = next((col for col in df_analise.columns if 'status' in col.lower()), None)
-    rep_col_dados = next((col for col in df_analise.columns if 'representante técnico' in col.lower() or 'representante' in col.lower() and 'id' not in col.lower()), None)
+    
+    # CORREÇÃO: Lógica aprimorada para selecionar a coluna de NOME do representante
+    rep_col_dados = next((col for col in df_analise.columns if 'representante técnico' in col.lower() and 'id' not in col.lower()), None)
+    if not rep_col_dados:
+        rep_col_dados = next((col for col in df_analise.columns if 'representante' in col.lower() and 'id' not in col.lower()), None)
+        
     city_col_dados = next((col for col in df_analise.columns if 'cidade agendamento' in col.lower() or 'cidade o.s.' in col.lower()), None)
     motivo_fechamento_col = next((col for col in df_analise.columns if 'tipo de fechamento' in col.lower()), None)
     cliente_col = next((col for col in df_analise.columns if 'cliente' in col.lower() and 'id' not in col.lower()), None)
@@ -248,13 +252,12 @@ if st.session_state.df_dados is not None:
 
 # --- ANALISADOR DE CUSTOS E DUPLICIDADE (Usa df_pagamento) ---
 if st.session_state.df_pagamento is not None:
+    # Código inalterado...
     st.markdown("---")
     st.header("🔎 Analisador de Custos e Duplicidade de Deslocamento")
     with st.expander("Clique aqui para analisar custos e duplicidades da Base de Pagamento", expanded=True):
         try:
             df_custos = st.session_state.df_pagamento.copy()
-
-            # --- Identificação flexível das colunas ---
             os_col = next((col for col in df_custos.columns if 'os' in col.lower()), None)
             data_fech_col = next((col for col in df_custos.columns if 'data de fechamento' in col.lower()), None)
             cidade_os_col = next((col for col in df_custos.columns if 'cidade o.s.' in col.lower()), None)
@@ -267,86 +270,48 @@ if st.session_state.df_pagamento is not None:
             abrang_col = next((col for col in df_custos.columns if 'abrangência rt' in col.lower()), None)
             valor_extra_col = next((col for col in df_custos.columns if 'valor extra' in col.lower()), None)
             pedagio_col = next((col for col in df_custos.columns if 'pedágio' in col.lower()), None)
-
             required_cols_custos = [os_col, data_fech_col, cidade_os_col, cidade_rt_col, rep_col, tec_col, valor_desl_col, desloc_km_col, valor_km_col, abrang_col, valor_extra_col, pedagio_col]
-
             if all(required_cols_custos):
-                # --- 1. Preparação e Filtragem Inicial ---
                 df_custos['VALOR_DESLOC_ORIGINAL'] = safe_to_numeric(df_custos[valor_desl_col])
                 df_custos['VALOR_EXTRA_NUM'] = safe_to_numeric(df_custos[valor_extra_col])
                 df_custos['PEDAGIO_NUM'] = safe_to_numeric(df_custos[pedagio_col])
-
-                filtro_custos_positivos_mask = (
-                    (df_custos['VALOR_DESLOC_ORIGINAL'] > 0) |
-                    (df_custos['VALOR_EXTRA_NUM'] > 0) |
-                    (df_custos['PEDAGIO_NUM'] > 0)
-                )
+                filtro_custos_positivos_mask = ((df_custos['VALOR_DESLOC_ORIGINAL'] > 0) | (df_custos['VALOR_EXTRA_NUM'] > 0) | (df_custos['PEDAGIO_NUM'] > 0))
                 df_custos = df_custos[filtro_custos_positivos_mask].copy()
-                
                 if df_custos.empty:
                     st.success("✅ Nenhuma ordem com custos de deslocamento, extra ou pedágio foi encontrada para análise.")
                     st.stop()
-
                 df_custos['DATA_ANALISE'] = pd.to_datetime(df_custos[data_fech_col], dayfirst=True, errors='coerce').dt.date
-
-                # --- 2. FILTROS INTERATIVOS ---
                 st.subheader("Filtros da Análise")
                 df_filtrado = df_custos.copy()
-
                 col1_filtro, col2_filtro = st.columns(2)
-
                 datas_disponiveis = df_filtrado['DATA_ANALISE'].dropna()
                 if not datas_disponiveis.empty:
-                    min_date = datas_disponiveis.min()
-                    max_date = datas_disponiveis.max()
-                    
-                    data_selecionada = col1_filtro.date_input(
-                        "Filtrar por Data de Fechamento:",
-                        value=(min_date, max_date),
-                        min_value=min_date,
-                        max_value=max_date
-                    )
+                    min_date, max_date = datas_disponiveis.min(), datas_disponiveis.max()
+                    data_selecionada = col1_filtro.date_input("Filtrar por Data de Fechamento:", value=(min_date, max_date), min_value=min_date, max_value=max_date)
                     if len(data_selecionada) == 2:
                         start_date, end_date = data_selecionada
-                        df_filtrado = df_filtrado[
-                            (df_filtrado['DATA_ANALISE'] >= start_date) & 
-                            (df_filtrado['DATA_ANALISE'] <= end_date)
-                        ]
-                
+                        df_filtrado = df_filtrado[(df_filtrado['DATA_ANALISE'] >= start_date) & (df_filtrado['DATA_ANALISE'] <= end_date)]
                 representantes_disponiveis = sorted(df_filtrado[rep_col].dropna().unique())
                 if representantes_disponiveis:
-                    reps_selecionados = col2_filtro.multiselect(
-                        "Filtrar por Representante:",
-                        options=representantes_disponiveis,
-                        placeholder="Selecione um ou mais"
-                    )
+                    reps_selecionados = col2_filtro.multiselect("Filtrar por Representante:", options=representantes_disponiveis, placeholder="Selecione um ou mais")
                     if reps_selecionados:
                         df_filtrado = df_filtrado[df_filtrado[rep_col].isin(reps_selecionados)]
-                
                 st.markdown("---")
-
                 if df_filtrado.empty:
                     st.warning("Nenhum dado encontrado com os filtros selecionados.")
                     st.stop()
-                
-                # --- 3. Análise e Cálculo de Custos (com dados já filtrados) ---
                 for col in [cidade_os_col, rep_col, tec_col, cidade_rt_col]:
                     if col in df_filtrado.columns and df_filtrado[col].dtype == 'object':
                         df_filtrado[col] = df_filtrado[col].str.strip()
-                
                 df_filtrado['DESLOC_KM_NUM'] = safe_to_numeric(df_filtrado[desloc_km_col])
                 df_filtrado['VALOR_KM_NUM'] = safe_to_numeric(df_filtrado[valor_km_col])
                 df_filtrado['ABRANG_NUM'] = safe_to_numeric(df_filtrado[abrang_col])
-                
                 mesma_cidade_mask = df_filtrado[cidade_rt_col] == df_filtrado[cidade_os_col]
                 valor_calculado = (df_filtrado['DESLOC_KM_NUM'] * df_filtrado['VALOR_KM_NUM']) - df_filtrado['ABRANG_NUM']
-                valor_calculado[valor_calculado < 0] = 0 
-                
+                valor_calculado[valor_calculado < 0] = 0
                 df_filtrado['VALOR_CALCULADO'] = np.where(mesma_cidade_mask, 0, valor_calculado)
                 df_filtrado['OBSERVACAO'] = np.where(mesma_cidade_mask, "Custo Zerado (Mesma Cidade)", "")
-                
                 df_filtrado[data_fech_col] = pd.to_datetime(df_filtrado[data_fech_col], errors='coerce').dt.strftime('%d/%m/%Y')
-
                 st.subheader("Resultados da Análise")
                 st.write("Ordens com Deslocamento Zerado (Cidade RT = Cidade O.S.)")
                 df_custo_zero = df_filtrado[mesma_cidade_mask]
@@ -354,38 +319,24 @@ if st.session_state.df_pagamento is not None:
                     st.dataframe(df_custo_zero[[os_col, data_fech_col, cidade_os_col, cidade_rt_col, rep_col, tec_col, 'VALOR_DESLOC_ORIGINAL', 'VALOR_CALCULADO', 'OBSERVACAO']])
                 else:
                     st.info("Nenhuma ordem com Cidade RT = Cidade O.S. nos filtros selecionados.")
-
                 st.write("Análise de Duplicidade de Deslocamento")
                 group_keys = ['DATA_ANALISE', cidade_os_col, rep_col, tec_col]
-                
                 df_filtrado['is_first'] = ~df_filtrado.duplicated(subset=group_keys, keep='first')
                 grupos_com_duplicatas = df_filtrado.groupby(group_keys).filter(lambda x: len(x) > 1)
-                
                 if grupos_com_duplicatas.empty:
                     st.success("✅ Nenhuma duplicidade de deslocamento encontrada nos filtros selecionados.")
                 else:
                     grupos_com_duplicatas['VALOR_CALCULADO_AJUSTADO'] = np.where(grupos_com_duplicatas['is_first'], grupos_com_duplicatas['VALOR_CALCULADO'], 0)
                     grupos_com_duplicatas['OBSERVACAO'] = np.where(grupos_com_duplicatas['is_first'], grupos_com_duplicatas['OBSERVACAO'], "Duplicidade (Custo Zerado)")
-                    
                     df_resultado_final = grupos_com_duplicatas.sort_values(by=group_keys + [os_col])
                     cols_to_show = [os_col, data_fech_col, cidade_os_col, rep_col, tec_col, 'VALOR_DESLOC_ORIGINAL', 'VALOR_CALCULADO_AJUSTADO', 'OBSERVACAO']
-                    
                     st.dataframe(df_resultado_final[cols_to_show])
-
                     csv_duplicatas = convert_df_to_csv(df_resultado_final[cols_to_show])
-                    st.download_button(
-                        label="📥 Exportar Resultado da Duplicidade (.csv)",
-                        data=csv_duplicatas,
-                        file_name="analise_duplicidade_deslocamento.csv",
-                        mime='text/csv',
-                    )
-
+                    st.download_button(label="📥 Exportar Resultado da Duplicidade (.csv)", data=csv_duplicatas, file_name="analise_duplicidade_deslocamento.csv", mime='text/csv')
             else:
                 st.error("ERRO: Para usar esta análise, a planilha de pagamento precisa conter todas as seguintes colunas: 'OS', 'Data de Fechamento', 'Cidade O.S.', 'Cidade RT', 'Representante', 'Técnico', 'Valor Deslocamento', 'Deslocamento', 'Valor KM RT', 'AC Abrangência RT', 'Valor Extra', e 'Pedágio'.")
-
         except Exception as e:
             st.error(f"Ocorreu um erro inesperado no Analisador de Custos. Detalhe: {e}")
-
 
 # --- FERRAMENTA DE DEVOLUÇÃO DE ORDENS (Usa df_devolucao) ---
 if st.session_state.df_devolucao is not None:
@@ -393,48 +344,27 @@ if st.session_state.df_devolucao is not None:
     st.markdown("---")
     st.header("📦 Ferramenta de Devolução de Ordens Vencidas")
     df_devolucao = st.session_state.df_devolucao.copy()
-
     date_col_devolucao = next((col for col in df_devolucao.columns if 'prazoinstalacao' in col.lower().replace(' ', '')), None)
     cliente_col_devolucao = next((col for col in df_devolucao.columns if 'clientenome' in col.lower().replace(' ', '')), None)
-
     if date_col_devolucao and cliente_col_devolucao:
         df_devolucao[date_col_devolucao] = pd.to_datetime(df_devolucao[date_col_devolucao], dayfirst=True, errors='coerce')
         df_devolucao.dropna(subset=[date_col_devolucao], inplace=True)
         hoje = pd.Timestamp.now().normalize()
         df_vencidas = df_devolucao[df_devolucao[date_col_devolucao] < hoje].copy()
-
         if df_vencidas.empty:
             st.info("Nenhuma ordem de serviço vencida encontrada na base de dados carregada.")
         else:
             st.warning(f"Foram encontradas {len(df_vencidas)} ordens vencidas no total.")
             clientes_vencidos = sorted(df_vencidas[cliente_col_devolucao].dropna().unique())
-            cliente_selecionado = st.selectbox(
-                "Pesquise ou selecione um cliente para filtrar as devoluções:",
-                options=clientes_vencidos,
-                index=None,
-                placeholder="Selecione um cliente..."
-            )
-
+            cliente_selecionado = st.selectbox("Pesquise ou selecione um cliente para filtrar as devoluções:", options=clientes_vencidos, index=None, placeholder="Selecione um cliente...")
             if cliente_selecionado:
                 df_filtrado_cliente = df_vencidas[df_vencidas[cliente_col_devolucao] == cliente_selecionado]
-                st.metric(
-                    label=f"Total de Ordens Vencidas para",
-                    value=cliente_selecionado,
-                    delta=f"{len(df_filtrado_cliente)} ordens",
-                    delta_color="inverse"
-                )
+                st.metric(label=f"Total de Ordens Vencidas para", value=cliente_selecionado, delta=f"{len(df_filtrado_cliente)} ordens", delta_color="inverse")
                 st.dataframe(df_filtrado_cliente)
-
                 csv = convert_df_to_csv(df_filtrado_cliente)
-                st.download_button(
-                    label="📥 Exportar Devolutiva (.csv)",
-                    data=csv,
-                    file_name=f"devolutiva_{cliente_selecionado.replace(' ', '_').lower()}.csv",
-                    mime='text/csv',
-                )
+                st.download_button(label="📥 Exportar Devolutiva (.csv)", data=csv, file_name=f"devolutiva_{cliente_selecionado.replace(' ', '_').lower()}.csv", mime='text/csv')
     else:
         st.error("ERRO: Verifique se a planilha de devolução contém as colunas 'PrazoInstalacao' e 'ClienteNome'.")
-
 
 # --- FERRAMENTA DE MAPEAMENTO (Usa df_mapeamento) ---
 if st.session_state.df_mapeamento is not None:
@@ -461,13 +391,12 @@ if st.session_state.df_mapeamento is not None:
 
 # --- OTIMIZADOR DE PROXIMIDADE (Usa df_dados e df_mapeamento) ---
 if st.session_state.df_dados is not None and st.session_state.df_mapeamento is not None:
+    # Código inalterado, pois já estava correto...
     st.markdown("---")
     with st.expander("🚚 Abrir Otimizador de Proximidade de RT"):
         try:
             df_dados_otim = st.session_state.df_dados
             df_map_otim = st.session_state.df_mapeamento
-            
-            # --- Identificação de colunas ---
             os_id_col = next((col for col in df_dados_otim.columns if 'número da o.s' in col.lower() or 'numeropedido' in col.lower() or 'os' in col.lower()), None)
             os_cliente_col = next((col for col in df_dados_otim.columns if 'cliente' in col.lower() and 'id' not in col.lower()), None)
             os_date_col = next((col for col in df_dados_otim.columns if 'data agendamento' in col.lower()), None)
@@ -476,35 +405,24 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
             if not os_rep_col:
                 os_rep_col = next((col for col in df_dados_otim.columns if 'representante' in col.lower() and 'id' not in col.lower()), None)
             os_status_col = next((col for col in df_dados_otim.columns if 'status' in col.lower()), None)
-            
             map_city_col = 'nm_cidade_atendimento'
             map_lat_atendimento_col = 'cd_latitude_atendimento'
             map_lon_atendimento_col = 'cd_longitude_atendimento'
             map_rep_col = 'nm_representante'
             map_rep_lat_col = 'cd_latitude_representante'
             map_rep_lon_col = 'cd_longitude_representante'
-            
             required_cols = [os_id_col, os_cliente_col, os_date_col, os_city_col, os_rep_col, os_status_col]
             if not all(required_cols):
                 st.warning("Para usar o otimizador, a planilha de agendamentos precisa conter colunas com os nomes corretos (incluindo Status e Representante sem ID).")
             else:
                 st.subheader("Filtro de Status")
                 all_statuses = df_dados_otim[os_status_col].dropna().unique().tolist()
-                
                 default_selection = [s for s in ['Agendada', 'Serviços realizados', 'Parcialmente realizado'] if s in all_statuses]
-
-                status_selecionados = st.multiselect(
-                    "Selecione os status para otimização:",
-                    options=all_statuses,
-                    default=default_selection
-                )
-
+                status_selecionados = st.multiselect("Selecione os status para otimização:", options=all_statuses, default=default_selection)
                 if not status_selecionados:
                     st.warning("Por favor, selecione ao menos um status para continuar.")
                     st.stop()
-
                 df_otimizacao_filtrado = df_dados_otim[df_dados_otim[os_status_col].isin(status_selecionados)].copy()
-
                 if df_otimizacao_filtrado.empty:
                     st.info(f"Nenhuma ordem com os status selecionados ('{', '.join(status_selecionados)}') foi encontrada.")
                 else:
@@ -527,7 +445,6 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                         cidade_selecionada_otim = st.selectbox("Selecione uma cidade:", options=lista_cidades, index=None, placeholder="Selecione...")
                         if cidade_selecionada_otim:
                             ordens_na_cidade = df_otimizacao_filtrado[df_otimizacao_filtrado[os_city_col] == cidade_selecionada_otim]
-                    
                     if ordens_na_cidade is not None and not ordens_na_cidade.empty:
                         st.subheader(f"Ordens em {cidade_selecionada_otim} (Status: {', '.join(status_selecionados)})")
                         st.dataframe(ordens_na_cidade[[os_id_col, os_cliente_col, os_date_col, os_rep_col]])
@@ -571,7 +488,7 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
 
 # --- Seção do Chat de IA ---
 st.markdown("---")
-st.header("💬 Converse com a IA para dúvidas!")
+st.header("💬 Converse com a IA para análises personalizadas")
 for message in st.session_state.display_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
@@ -584,10 +501,8 @@ if prompt := st.chat_input("Faça uma pergunta específica..."):
     keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
     df_type = 'chat'
     
-    # Prioriza o df_mapeamento se palavras-chave estiverem presentes
     if any(keyword in prompt.lower() for keyword in keywords_mapeamento) and st.session_state.df_mapeamento is not None:
         df_type = 'mapeamento'
-    # Usa df_dados se estiver carregado e o mapeamento não for o alvo
     elif st.session_state.df_dados is not None:
         df_type = 'dados'
         
