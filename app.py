@@ -299,4 +299,4 @@ if prompt := st.chat_input("Faça uma pergunta específica..."):
                     st.dataframe(resultado)
                     response_text = "Resultado exibido na tabela acima."
                 else:
-                    response_text = f"Resultado: {resultado
+                    response_text = f"Resultado: {resultado}
