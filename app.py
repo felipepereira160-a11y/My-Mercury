@@ -139,17 +139,37 @@ if st.session_state.df_dados is not None:
     with col1:
         if status_col and city_col:
             st.write("Ordens Agendadas por Cidade (Top 10)")
-            st.bar_chart(df_filtrado_dash[df_filtrado_dash[status_col]=='Agendada'][city_col].value_counts().nlargest(10))
+            st.bar_chart(
+                df_filtrado_dash[df_filtrado_dash[status_col]=='Agendada'][city_col]
+                .value_counts()
+                .sort_values(ascending=False)
+                .nlargest(10)
+            )
         if status_col and rep_col:
             st.write("Ordens Realizadas por RT (Top 10)")
-            st.bar_chart(df_filtrado_dash[df_filtrado_dash[status_col]=='Realizada'][rep_col].value_counts().nlargest(10))
+            st.bar_chart(
+                df_filtrado_dash[df_filtrado_dash[status_col]=='Realizada'][rep_col]
+                .value_counts()
+                .sort_values(ascending=False)
+                .nlargest(10)
+            )
     with col2:
         if rep_col:
             st.write("Total de Ordens por RT (Top 10)")
-            st.bar_chart(df_filtrado_dash[rep_col].value_counts().nlargest(10))
+            st.bar_chart(
+                df_filtrado_dash[rep_col]
+                .value_counts()
+                .sort_values(ascending=False)
+                .nlargest(10)
+            )
         if tipo_fechamento_col and rep_col:
             st.write("Indisponibilidades por RT (Top 10)")
-            st.bar_chart(df_filtrado_dash[df_filtrado_dash[tipo_fechamento_col]=='Visita Improdutiva'][rep_col].value_counts().nlargest(10))
+            st.bar_chart(
+                df_filtrado_dash[df_filtrado_dash[tipo_fechamento_col]=='Visita Improdutiva'][rep_col]
+                .value_counts()
+                .sort_values(ascending=False)
+                .nlargest(10)
+            )
 
     with st.expander("Ver tabela completa com filtros"):
         st.dataframe(df_filtrado_dash)
@@ -160,22 +180,40 @@ if st.session_state.df_dados is not None:
     st.subheader("📌 Visões Específicas")
 
     # Realizada - Serviços realizados
-    df_realizada_servicos = df_dados[(df_dados[status_col]=='Realizada') & (df_dados[tipo_fechamento_col]=='Serviços realizados')]
+    df_realizada_servicos = df_dados[
+        (df_dados[status_col]=='Realizada') & (df_dados[tipo_fechamento_col]=='Serviços realizados')
+    ]
     st.write("✅ Ordens Realizadas - Serviços realizados")
-    st.bar_chart(df_realizada_servicos[rep_col].value_counts().nlargest(15))
+    st.bar_chart(
+        df_realizada_servicos[rep_col].value_counts().sort_values(ascending=False).nlargest(15)
+    )
 
     # Realizada - Serviços parcialmente realizados
-    df_realizada_parcial = df_dados[(df_dados[status_col]=='Realizada') & (df_dados[tipo_fechamento_col]=='Serviços parcialmente realizados')]
+    df_realizada_parcial = df_dados[
+        (df_dados[status_col]=='Realizada') & (df_dados[tipo_fechamento_col]=='Serviços parcialmente realizados')
+    ]
     st.write("✅ Ordens Realizadas - Serviços parcialmente realizados")
-    st.bar_chart(df_realizada_parcial[rep_col].value_counts().nlargest(15))
+    st.bar_chart(
+        df_realizada_parcial[rep_col].value_counts().sort_values(ascending=False).nlargest(15)
+    )
 
     # Não realizadas - Fechamentos problemáticos
-    tipos_nao_realizadas = ['Indisponibilidade técnica', 'Visita Improdutiva', 'Reagendamento solicitado', 'Não comparecimento do técnico']
+    tipos_nao_realizadas = [
+        'Indisponibilidade técnica',
+        'Visita Improdutiva',
+        'Reagendamento solicitado',
+        'Não comparecimento do técnico'
+    ]
 
     col1, col2 = st.columns(2)
     with col1:
-        fechamento1 = st.selectbox("Filtrar gráfico 1 - Tipo de Fechamento Problemático", tipos_nao_realizadas, key='fech1')
-        df_graf1 = grafico_fechamentos_problematicos(df_dados, status_col, tipo_fechamento_col, rep_col, fechamento1)
+        fechamento1 = st.selectbox(
+            "Filtrar gráfico 1 - Tipo de Fechamento Problemático",
+            tipos_nao_realizadas, key='fech1'
+        )
+        df_graf1 = grafico_fechamentos_problematicos(
+            df_dados, status_col, tipo_fechamento_col, rep_col, fechamento1
+        )
         st.write(f"❌ {fechamento1} - Top 15 RTs")
         if not df_graf1.empty:
             st.bar_chart(df_graf1.set_index(rep_col)['Quantidade'])
@@ -183,8 +221,13 @@ if st.session_state.df_dados is not None:
             st.info("Nenhuma ocorrência encontrada.")
 
     with col2:
-        fechamento2 = st.selectbox("Filtrar gráfico 2 - Tipo de Fechamento Problemático", tipos_nao_realizadas, key='fech2')
-        df_graf2 = grafico_fechamentos_problematicos(df_dados, status_col, tipo_fechamento_col, rep_col, fechamento2)
+        fechamento2 = st.selectbox(
+            "Filtrar gráfico 2 - Tipo de Fechamento Problemático",
+            tipos_nao_realizadas, key='fech2'
+        )
+        df_graf2 = grafico_fechamentos_problematicos(
+            df_dados, status_col, tipo_fechamento_col, rep_col, fechamento2
+        )
         st.write(f"❌ {fechamento2} - Top 15 RTs")
         if not df_graf2.empty:
             st.bar_chart(df_graf2.set_index(rep_col)['Quantidade'])
