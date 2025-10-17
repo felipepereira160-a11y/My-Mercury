@@ -1,6 +1,7 @@
 import streamlit as st
 import google.generativeai as genai
 import pandas as pd
+import numpy as np
 import os
 import time
 from haversine import haversine, Unit
@@ -60,6 +61,12 @@ if 'df_devolucao' not in st.session_state:
 @st.cache_data
 def convert_df_to_csv(df):
     return df.to_csv(index=False, sep=';').encode('utf-8-sig')
+
+def safe_to_numeric(series):
+    """Converte uma série para numérico de forma robusta."""
+    if series.dtype == 'object':
+        series = series.astype(str).str.replace('R$', '', regex=False).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip()
+    return pd.to_numeric(series, errors='coerce').fillna(0)
 
 @st.cache_data(ttl=3600)
 def executar_analise_pandas(_df_hash, pergunta, df_type):
@@ -145,8 +152,8 @@ if st.session_state.df_dados is not None:
     df_analise = df_dados_original.copy()
 
     status_col = next((col for col in df_analise.columns if 'status' in col.lower()), None)
-    rep_col_dados = next((col for col in df_analise.columns if 'representante técnico' in col.lower() and 'id' not in col.lower()), None)
-    city_col_dados = next((col for col in df_analise.columns if 'cidade agendamento' in col.lower()), None)
+    rep_col_dados = next((col for col in df_analise.columns if 'representante técnico' in col.lower() or 'representante' in col.lower() and 'id' not in col.lower()), None)
+    city_col_dados = next((col for col in df_analise.columns if 'cidade agendamento' in col.lower() or 'cidade o.s.' in col.lower()), None)
     motivo_fechamento_col = next((col for col in df_analise.columns if 'tipo de fechamento' in col.lower()), None)
     cliente_col = next((col for col in df_analise.columns if 'cliente' in col.lower() and 'id' not in col.lower()), None)
     
@@ -207,17 +214,111 @@ if st.session_state.df_dados is not None:
         if motivo_fechamento_col:
             st.bar_chart(df_analise[motivo_fechamento_col].value_counts().nlargest(10))
         else:
-             st.warning("Coluna 'Tipo de Fechamento' não encontrada.")
+            st.warning("Coluna 'Tipo de Fechamento' não encontrada.")
     with col4:
         st.write("**Visitas Improdutivas por Cliente (Top 10)**")
         if motivo_fechamento_col and cliente_col:
             improdutivas_por_cliente_df = df_analise[df_analise[motivo_fechamento_col] == 'Visita Improdutiva']
             st.bar_chart(improdutivas_por_cliente_df[cliente_col].value_counts().nlargest(10))
         else:
-             st.warning("Colunas 'Tipo de Fechamento' ou 'Cliente' não encontradas.")
+            st.warning("Colunas 'Tipo de Fechamento' ou 'Cliente' não encontradas.")
 
     with st.expander("Ver tabela de dados completa (original, sem filtros)"):
         st.dataframe(df_dados_original)
+
+# --- INÍCIO DA FERRAMENTA ATUALIZADA: ANALISADOR DE CUSTOS E DUPLICIDADE ---
+if st.session_state.df_dados is not None:
+    st.markdown("---")
+    st.header("🔎 Analisador de Custos e Duplicidade de Deslocamento")
+    with st.expander("Clique aqui para analisar custos e duplicidades", expanded=False):
+        try:
+            df_custos = st.session_state.df_dados.copy()
+
+            # --- Identificação flexível das colunas ---
+            os_col = next((col for col in df_custos.columns if 'os' in col.lower()), None)
+            data_ag_col = next((col for col in df_custos.columns if 'data de agendamento' in col.lower()), None)
+            cidade_os_col = next((col for col in df_custos.columns if 'cidade o.s.' in col.lower()), None)
+            cidade_rt_col = next((col for col in df_custos.columns if 'cidade rt' in col.lower()), None)
+            rep_col = next((col for col in df_custos.columns if 'representante' in col.lower() and 'nome fantasia' not in col.lower()), None)
+            tec_col = next((col for col in df_custos.columns if 'técnico' in col.lower()), None)
+            valor_desl_col = next((col for col in df_custos.columns if 'valor deslocamento' in col.lower()), None)
+            desloc_km_col = next((col for col in df_custos.columns if col.lower() == 'deslocamento'), None) # Busca exata
+            valor_km_col = next((col for col in df_custos.columns if 'valor km rt' in col.lower()), None)
+            abrang_col = next((col for col in df_custos.columns if 'abrangência rt' in col.lower()), None)
+
+            required_cols_custos = [os_col, data_ag_col, cidade_os_col, cidade_rt_col, rep_col, tec_col, valor_desl_col, desloc_km_col, valor_km_col, abrang_col]
+
+            if all(required_cols_custos):
+                # --- 1. Preparação e Cálculo de Custos ---
+                df_custos['DATA_ANALISE'] = pd.to_datetime(df_custos[data_ag_col], dayfirst=True, errors='coerce').dt.date
+                df_custos.dropna(subset=['DATA_ANALISE', cidade_os_col, cidade_rt_col], inplace=True)
+                
+                # Limpeza robusta das colunas de valores
+                df_custos['VALOR_DESLOC_ORIGINAL'] = safe_to_numeric(df_custos[valor_desl_col])
+                df_custos['DESLOC_KM_NUM'] = safe_to_numeric(df_custos[desloc_km_col])
+                df_custos['VALOR_KM_NUM'] = safe_to_numeric(df_custos[valor_km_col])
+                df_custos['ABRANG_NUM'] = safe_to_numeric(df_custos[abrang_col])
+                
+                # Aplica a regra de negócio para o cálculo
+                # Condição: Cidade RT == Cidade OS -> Custo é 0
+                mesma_cidade_mask = df_custos[cidade_rt_col].str.strip().str.lower() == df_custos[cidade_os_col].str.strip().str.lower()
+                
+                # Cálculo do deslocamento conforme a fórmula
+                valor_calculado = (df_custos['DESLOC_KM_NUM'] * df_custos['VALOR_KM_NUM']) - df_custos['ABRANG_NUM']
+                valor_calculado[valor_calculado < 0] = 0 # O valor não pode ser negativo
+                
+                df_custos['VALOR_CALCULADO'] = np.where(mesma_cidade_mask, 0, valor_calculado)
+                df_custos['OBSERVACAO'] = np.where(mesma_cidade_mask, "Custo Zerado (Mesma Cidade)", "")
+                
+                # --- 2. Exibição das Ordens com Custo Zero ---
+                st.subheader("Ordens com Deslocamento Zerado (Cidade RT = Cidade O.S.)")
+                df_custo_zero = df_custos[mesma_cidade_mask]
+                if not df_custo_zero.empty:
+                    st.info(f"Encontradas {len(df_custo_zero)} ordens onde a cidade do RT é a mesma da O.S.")
+                    st.dataframe(df_custo_zero[[os_col, data_ag_col, cidade_os_col, cidade_rt_col, rep_col, tec_col, 'VALOR_DESLOC_ORIGINAL', 'VALOR_CALCULADO', 'OBSERVACAO']])
+                else:
+                    st.success("Nenhuma ordem encontrada com a Cidade do RT igual à Cidade da O.S.")
+
+                # --- 3. Análise de Duplicidade ---
+                st.subheader("Análise de Duplicidade de Deslocamento")
+                group_keys = ['DATA_ANALISE', cidade_os_col, rep_col, tec_col]
+                
+                # Marca a primeira ocorrência em cada grupo
+                df_custos['is_first'] = ~df_custos.duplicated(subset=group_keys, keep='first')
+                
+                # Filtra apenas os grupos que têm duplicatas
+                grupos_com_duplicatas = df_custos.groupby(group_keys).filter(lambda x: len(x) > 1)
+                
+                if grupos_com_duplicatas.empty:
+                    st.success("✅ Nenhuma duplicidade de deslocamento encontrada nos dados carregados.")
+                else:
+                    # Nas duplicatas, o valor calculado deveria ser 0
+                    grupos_com_duplicatas['VALOR_CALCULADO_AJUSTADO'] = np.where(grupos_com_duplicatas['is_first'], grupos_com_duplicatas['VALOR_CALCULADO'], 0)
+                    grupos_com_duplicatas['OBSERVACAO'] = np.where(grupos_com_duplicatas['is_first'], grupos_com_duplicatas['OBSERVACAO'], "Duplicidade (Custo Zerado)")
+
+                    st.warning(f"Foram encontradas {len(grupos_com_duplicatas)} ordens em grupos com potencial de duplicidade.")
+                    
+                    df_resultado_final = grupos_com_duplicatas.sort_values(by=group_keys + [os_col])
+                    cols_to_show = [os_col, data_ag_col, cidade_os_col, rep_col, tec_col, 'VALOR_DESLOC_ORIGINAL', 'VALOR_CALCULADO_AJUSTADO', 'OBSERVACAO']
+                    
+                    st.dataframe(df_resultado_final[cols_to_show])
+
+                    # --- Botão de Download ---
+                    csv_duplicatas = convert_df_to_csv(df_resultado_final[cols_to_show])
+                    st.download_button(
+                        label="📥 Exportar Resultado da Duplicidade (.csv)",
+                        data=csv_duplicatas,
+                        file_name="analise_duplicidade_deslocamento.csv",
+                        mime='text/csv',
+                    )
+
+            else:
+                st.error("ERRO: Para usar esta análise, a planilha precisa conter todas as seguintes colunas: 'OS', 'Data de Agendamento', 'Cidade O.S.', 'Cidade RT', 'Representante', 'Técnico', 'Valor Deslocamento', 'Deslocamento', 'Valor KM RT', 'AC Abrangência RT'.")
+
+        except Exception as e:
+            st.error(f"Ocorreu um erro inesperado no Analisador de Custos. Detalhe: {e}")
+# --- FIM DA FERRAMENTA ATUALIZADA ---
+
 
 # --- FERRAMENTA DE DEVOLUÇÃO DE ORDENS ---
 if st.session_state.df_devolucao is not None:
@@ -298,11 +399,11 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
         try:
             df_dados_otim = st.session_state.df_dados
             df_map_otim = st.session_state.df_mapeamento
-            os_id_col = next((col for col in df_dados_otim.columns if 'número da o.s' in col.lower() or 'numeropedido' in col.lower()), None)
+            os_id_col = next((col for col in df_dados_otim.columns if 'número da o.s' in col.lower() or 'numeropedido' in col.lower() or 'os' in col.lower()), None)
             os_cliente_col = next((col for col in df_dados_otim.columns if 'cliente' in col.lower() and 'id' not in col.lower()), None)
             os_date_col = next((col for col in df_dados_otim.columns if 'data agendamento' in col.lower()), None)
-            os_city_col = next((col for col in df_dados_otim.columns if 'cidade agendamento' in col.lower()), None)
-            os_rep_col = next((col for col in df_dados_otim.columns if 'representante técnico' in col.lower() and 'id' not in col.lower()), None)
+            os_city_col = next((col for col in df_dados_otim.columns if 'cidade agendamento' in col.lower() or 'cidade o.s.' in col.lower()), None)
+            os_rep_col = next((col for col in df_dados_otim.columns if 'representante técnico' in col.lower() or 'representante' in col.lower() and 'id' not in col.lower()), None)
             os_status_col = next((col for col in df_dados_otim.columns if 'status' in col.lower()), None)
             map_city_col = 'nm_cidade_atendimento'
             map_lat_atendimento_col = 'cd_latitude_atendimento'
@@ -418,4 +519,3 @@ if prompt := st.chat_input("Faça uma pergunta específica..."):
                 st.markdown(response_text)
 
     st.session_state.display_history.append({"role": "assistant", "content": response_text})
-
