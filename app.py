@@ -173,21 +173,27 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
             st.warning("Colunas necessárias não encontradas no arquivo de agendamentos.")
         else:
             df_agendadas = df_dados_otim[df_dados_otim[os_status_col]=='Agendada'].copy()
-            cidades_opcoes_otim = ["Todos"] + sorted(df_agendadas[os_city_col].dropna().unique())
-            cidade_selecionada_otim = st.selectbox("Selecione uma cidade:", cidades_opcoes_otim)
 
-            if cidade_selecionada_otim=="Todos":
-                ordens_na_cidade = df_agendadas.copy()
-            else:
-                ordens_na_cidade = df_agendadas[df_agendadas[os_city_col]==cidade_selecionada_otim]
+            # --- FILTRO POR CIDADE OU NÚMERO DA O.S ---
+            st.write("Escolha a Cidade ou o Número da O.S para exibir as ordens")
+            cidade_opcoes = [""] + sorted(df_agendadas[os_city_col].dropna().unique())
+            os_opcoes = [""] + sorted(df_agendadas[os_id_col].dropna().astype(str).unique())
 
-            if ordens_na_cidade.empty:
-                st.info("Nenhuma OS agendada encontrada.")
+            cidade_selecionada = st.selectbox("Cidade:", cidade_opcoes)
+            os_selecionada = st.selectbox("Número da O.S:", os_opcoes)
+
+            ordens_filtradas = df_agendadas.copy()
+            if cidade_selecionada: ordens_filtradas = ordens_filtradas[ordens_filtradas[os_city_col]==cidade_selecionada]
+            if os_selecionada: ordens_filtradas = ordens_filtradas[ordens_filtradas[os_id_col].astype(str)==os_selecionada]
+
+            if ordens_filtradas.empty:
+                st.info("Nenhuma OS encontrada com o filtro selecionado.")
             else:
-                st.dataframe(ordens_na_cidade[[os_id_col, os_cliente_col, os_date_col, os_rep_col]])
-                # Proximidade (exemplo com primeira cidade disponível)
+                st.dataframe(ordens_filtradas[[os_id_col, os_cliente_col, os_date_col, os_rep_col]])
+
+                # Cálculo de proximidade com RTs
                 map_city_col, map_lat_col, map_lon_col, map_rep_col_map, map_rep_lat_col, map_rep_lon_col = 'nm_cidade_atendimento', 'cd_latitude_atendimento', 'cd_longitude_atendimento', 'nm_representante', 'cd_latitude_representante', 'cd_longitude_representante'
-                for _, ordem in ordens_na_cidade.iterrows():
+                for _, ordem in ordens_filtradas.iterrows():
                     cidade_info = df_map_otim[df_map_otim[map_city_col]==ordem[os_city_col]]
                     if not cidade_info.empty:
                         ponto_atendimento = (cidade_info.iloc[0][map_lat_col], cidade_info.iloc[0][map_lon_col])
