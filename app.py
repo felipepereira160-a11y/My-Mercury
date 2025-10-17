@@ -97,10 +97,12 @@ def executar_analise_pandas(_df_hash, pergunta, df_type):
         return None, f"Ocorreu um erro ao executar a análise: {e}"
 
 def carregar_dataframe(arquivo, separador_padrao=','):
-    # CORREÇÃO: Adicionado suporte para .xls
+    # CORREÇÃO FINAL: Especifica o 'engine' para evitar erros
     nome_arquivo = arquivo.name.lower()
-    if nome_arquivo.endswith(('.xlsx', '.xls')):
-        return pd.read_excel(arquivo)
+    if nome_arquivo.endswith('.xlsx'):
+        return pd.read_excel(arquivo, engine='openpyxl')
+    elif nome_arquivo.endswith('.xls'):
+        return pd.read_excel(arquivo, engine='xlrd')
     elif nome_arquivo.endswith('.csv'):
         try:
             arquivo.seek(0)
@@ -117,7 +119,6 @@ def carregar_dataframe(arquivo, separador_padrao=','):
 # --- Barra Lateral ---
 with st.sidebar:
     st.header("Base de Conhecimento")
-    # CORREÇÃO: Adicionado 'xls' aos tipos de arquivo permitidos
     tipos_permitidos = ["csv", "xlsx", "xls"]
     
     data_file = st.sidebar.file_uploader("1. Upload de Agendamentos (OS)", type=tipos_permitidos)
