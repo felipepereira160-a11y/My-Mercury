@@ -4,6 +4,7 @@ import pandas as pd
 import os
 import time
 from haversine import haversine, Unit
+from io import BytesIO
 
 # --- Configuração da Página ---
 st.set_page_config(page_title="Seu Assistente de Dados com IA", page_icon="🧠", layout="wide")
@@ -52,8 +53,14 @@ if 'df_dados' not in st.session_state:
     st.session_state.df_dados = None
 if 'df_mapeamento' not in st.session_state:
     st.session_state.df_mapeamento = None
+if 'df_devolucao' not in st.session_state:
+    st.session_state.df_devolucao = None
 
 # --- Funções ---
+@st.cache_data
+def convert_df_to_csv(df):
+    return df.to_csv(index=False, sep=';').encode('utf-8-sig')
+
 @st.cache_data(ttl=3600)
 def executar_analise_pandas(_df_hash, pergunta, df_type):
     df = st.session_state.df_dados if df_type == 'dados' else st.session_state.df_mapeamento
@@ -115,6 +122,15 @@ with st.sidebar:
         except Exception as e:
             st.error(f"Erro no mapeamento: {e}")
 
+    st.markdown("---")
+    devolucao_file = st.sidebar.file_uploader("3. Upload de Itens a Instalar (Devolução)", type=["csv", "xlsx"])
+    if devolucao_file:
+        try:
+            st.session_state.df_devolucao = carregar_dataframe(devolucao_file, separador_padrao=';')
+            st.success("Base de devolução carregada!")
+        except Exception as e:
+            st.error(f"Erro na base de devolução: {e}")
+
     if st.button("Limpar Tudo"):
         st.session_state.clear()
         st.rerun()
@@ -128,43 +144,32 @@ if st.session_state.df_dados is not None:
     df_dados_original = st.session_state.df_dados.copy()
     df_analise = df_dados_original.copy()
 
-    # Identificar colunas dinamicamente
     status_col = next((col for col in df_analise.columns if 'status' in col.lower()), None)
     rep_col_dados = next((col for col in df_analise.columns if 'representante técnico' in col.lower() and 'id' not in col.lower()), None)
     city_col_dados = next((col for col in df_analise.columns if 'cidade agendamento' in col.lower()), None)
     motivo_fechamento_col = next((col for col in df_analise.columns if 'tipo de fechamento' in col.lower()), None)
     cliente_col = next((col for col in df_analise.columns if 'cliente' in col.lower() and 'id' not in col.lower()), None)
     
-    # --- Seção de Filtros ---
     st.subheader("Filtros de Análise")
     col_filtro1, col_filtro2 = st.columns(2)
     
     status_selecionado = None
     if status_col:
-        status_disponiveis = sorted(df_analise[status_col].dropna().unique())
-        opcoes_status = ["Exibir Todos"] + status_disponiveis
-        status_selecionado = col_filtro1.selectbox(
-            "Filtrar por Status:",
-            options=opcoes_status
-        )
+        opcoes_status = ["Exibir Todos"] + sorted(df_analise[status_col].dropna().unique())
+        status_selecionado = col_filtro1.selectbox("Filtrar por Status:", options=opcoes_status)
 
     fechamento_selecionado = None
     if motivo_fechamento_col:
-        fechamentos_disponiveis = sorted(df_analise[motivo_fechamento_col].dropna().unique())
-        opcoes_fechamento = ["Exibir Todos"] + fechamentos_disponiveis
-        fechamento_selecionado = col_filtro2.selectbox(
-            "Filtrar por Tipo de Fechamento:",
-            options=opcoes_fechamento
-        )
+        opcoes_fechamento = ["Exibir Todos"] + sorted(df_analise[motivo_fechamento_col].dropna().unique())
+        fechamento_selecionado = col_filtro2.selectbox("Filtrar por Tipo de Fechamento:", options=opcoes_fechamento)
 
-    # Aplicar filtros ao dataframe de análise
-    if status_selecionado and status_selecionado != "Exibir Todos" and status_col:
+    if status_selecionado and status_selecionado != "Exibir Todos":
         df_analise = df_analise[df_analise[status_col] == status_selecionado]
-    if fechamento_selecionado and fechamento_selecionado != "Exibir Todos" and motivo_fechamento_col:
+    if fechamento_selecionado and fechamento_selecionado != "Exibir Todos":
         df_analise = df_analise[df_analise[motivo_fechamento_col] == fechamento_selecionado]
 
-    # --- Gráficos ---
     st.subheader("Análises Gráficas")
+    # ... (código dos gráficos permanece o mesmo)
     col1, col2 = st.columns(2)
     with col1:
         st.write("**Ordens Agendadas por Cidade (Top 10)**")
@@ -195,7 +200,6 @@ if st.session_state.df_dados is not None:
         else:
             st.warning("Colunas 'Tipo de Fechamento' ou 'Representante Técnico' não encontradas.")
 
-    # --- Novos Gráficos ---
     st.subheader("Outras Análises")
     col3, col4 = st.columns(2)
     with col3:
@@ -212,17 +216,64 @@ if st.session_state.df_dados is not None:
         else:
              st.warning("Colunas 'Tipo de Fechamento' ou 'Cliente' não encontradas.")
 
-
     with st.expander("Ver tabela de dados completa (original, sem filtros)"):
         st.dataframe(df_dados_original)
+
+# --- FERRAMENTA DE DEVOLUÇÃO DE ORDENS ---
+if st.session_state.df_devolucao is not None:
+    st.markdown("---")
+    st.header("📦 Ferramenta de Devolução de Ordens Vencidas")
+    df_devolucao = st.session_state.df_devolucao.copy()
+
+    date_col_devolucao = next((col for col in df_devolucao.columns if 'datalimiteagendamento' in col.lower().replace(' ', '')), None)
+    cliente_col_devolucao = next((col for col in df_devolucao.columns if 'clientenome' in col.lower().replace(' ', '')), None)
+
+    if date_col_devolucao and cliente_col_devolucao:
+        df_devolucao[date_col_devolucao] = pd.to_datetime(df_devolucao[date_col_devolucao], dayfirst=True, errors='coerce')
+        df_devolucao.dropna(subset=[date_col_devolucao], inplace=True)
+        hoje = pd.Timestamp.now().normalize()
+        df_vencidas = df_devolucao[df_devolucao[date_col_devolucao] < hoje].copy()
+
+        if df_vencidas.empty:
+            st.info("Nenhuma ordem de serviço vencida encontrada na base de dados carregada.")
+        else:
+            st.warning(f"Foram encontradas {len(df_vencidas)} ordens vencidas no total.")
+            clientes_vencidos = sorted(df_vencidas[cliente_col_devolucao].dropna().unique())
+            cliente_selecionado = st.selectbox(
+                "Pesquise ou selecione um cliente para filtrar as devoluções:",
+                options=clientes_vencidos,
+                index=None,
+                placeholder="Selecione um cliente..."
+            )
+
+            if cliente_selecionado:
+                df_filtrado_cliente = df_vencidas[df_vencidas[cliente_col_devolucao] == cliente_selecionado]
+                st.metric(
+                    label=f"Total de Ordens Vencidas para",
+                    value=cliente_selecionado,
+                    delta=f"{len(df_filtrado_cliente)} ordens",
+                    delta_color="inverse"
+                )
+                st.dataframe(df_filtrado_cliente)
+
+                csv = convert_df_to_csv(df_filtrado_cliente)
+                st.download_button(
+                    label="📥 Exportar Devolutiva (.csv)",
+                    data=csv,
+                    file_name=f"devolutiva_{cliente_selecionado.replace(' ', '_').lower()}.csv",
+                    mime='text/csv',
+                )
+    else:
+        st.error("ERRO: Verifique se a planilha de devolução contém as colunas 'DataLimiteAgendamento' e 'ClienteNome'.")
+
 
 # --- FERRAMENTA DE MAPEAMENTO ---
 if st.session_state.df_mapeamento is not None:
     st.markdown("---")
     st.header("🗺️ Ferramenta de Mapeamento e Consulta de RT")
+    # ... (código do mapeamento permanece o mesmo)
     df_map = st.session_state.df_mapeamento.copy()
     city_col_map, rep_col_map, lat_col, lon_col, km_col = 'nm_cidade_atendimento', 'nm_representante', 'cd_latitude_atendimento', 'cd_longitude_atendimento', 'qt_distancia_atendimento_km'
-
     if all(col in df_map.columns for col in [city_col_map, rep_col_map, lat_col, lon_col, km_col]):
         col1, col2 = st.columns(2)
         cidade_selecionada_map = col1.selectbox("Filtrar Mapeamento por Cidade:", options=sorted(df_map[city_col_map].dropna().unique()), index=None, placeholder="Selecione uma cidade")
@@ -243,10 +294,10 @@ if st.session_state.df_mapeamento is not None:
 if st.session_state.df_dados is not None and st.session_state.df_mapeamento is not None:
     st.markdown("---")
     with st.expander("🚚 Abrir Otimizador de Proximidade de RT"):
+        # ... (código do otimizador permanece o mesmo)
         try:
             df_dados_otim = st.session_state.df_dados
             df_map_otim = st.session_state.df_mapeamento
-
             os_id_col = next((col for col in df_dados_otim.columns if 'número da o.s' in col.lower() or 'numeropedido' in col.lower()), None)
             os_cliente_col = next((col for col in df_dados_otim.columns if 'cliente' in col.lower() and 'id' not in col.lower()), None)
             os_date_col = next((col for col in df_dados_otim.columns if 'data agendamento' in col.lower()), None)
@@ -259,7 +310,6 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
             map_rep_col = 'nm_representante'
             map_rep_lat_col = 'cd_latitude_representante'
             map_rep_lon_col = 'cd_longitude_representante'
-
             required_cols = [os_id_col, os_cliente_col, os_date_col, os_city_col, os_rep_col, os_status_col]
             if not all(required_cols):
                 st.warning("Para usar o otimizador, a planilha de agendamentos precisa conter colunas com os nomes corretos.")
@@ -270,10 +320,8 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                 else:
                     st.subheader("Buscar Ordem de Serviço Específica")
                     os_pesquisada_num = st.text_input("Digite o Número da O.S. para análise direta:")
-
                     cidade_selecionada_otim = None
                     ordens_na_cidade = None
-                    
                     if os_pesquisada_num:
                         df_agendadas[os_id_col] = df_agendadas[os_id_col].astype(str)
                         resultado_busca = df_agendadas[df_agendadas[os_id_col].str.strip() == os_pesquisada_num.strip()]
@@ -289,11 +337,9 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                         cidade_selecionada_otim = st.selectbox("Selecione uma cidade:", options=lista_cidades_agendadas, index=None, placeholder="Selecione...")
                         if cidade_selecionada_otim:
                             ordens_na_cidade = df_agendadas[df_agendadas[os_city_col] == cidade_selecionada_otim]
-                    
                     if ordens_na_cidade is not None and not ordens_na_cidade.empty:
                         st.subheader(f"Ordens 'Agendadas' em {cidade_selecionada_otim}:")
                         st.dataframe(ordens_na_cidade[[os_id_col, os_cliente_col, os_date_col, os_rep_col]])
-                        
                         st.subheader(f"Análise de Proximidade para cada Ordem:")
                         cidade_info = df_map_otim[df_map_otim[map_city_col] == cidade_selecionada_otim]
                         if cidade_info.empty:
@@ -302,15 +348,12 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                             ponto_atendimento = (cidade_info.iloc[0][map_lat_atendimento_col], cidade_info.iloc[0][map_lon_atendimento_col])
                             distancias = [{'Representante': str(rt_map[map_rep_col]), 'Distancia (km)': haversine((rt_map[map_rep_lat_col], rt_map[map_rep_lon_col]), ponto_atendimento, unit=Unit.KILOMETERS)} for _, rt_map in df_map_otim.iterrows()]
                             df_distancias = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
-                            
                             termos_excluidos_otimizador = ['stellantis', 'ceabs', 'fca chrysler']
                             mascara_otimizador = ~df_distancias['Representante'].str.contains('|'.join(termos_excluidos_otimizador), case=False, na=False)
                             df_distancias_filtrado = df_distancias[mascara_otimizador]
-
                             rt_sugerido = None
                             if not df_distancias_filtrado.empty:
                                 rt_sugerido = df_distancias_filtrado.loc[df_distancias_filtrado['Distancia (km)'].idxmin()]
-
                             for index, ordem in ordens_na_cidade.iterrows():
                                 rt_atual = ordem[os_rep_col]
                                 with st.container(border=True):
