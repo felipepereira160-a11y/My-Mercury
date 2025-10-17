@@ -6,6 +6,8 @@ from haversine import haversine, Unit
 
 # --- Configuração da Página ---
 st.set_page_config(page_title="Seu Assistente de Dados com IA", page_icon="🧠", layout="wide")
+
+# --- Título ---
 st.title("🧠 Seu Assistente de Dados com IA")
 st.write("Converse comigo ou faça o upload de seus arquivos na barra lateral para começar a analisar!")
 
@@ -14,7 +16,6 @@ api_key = st.secrets.get("GOOGLE_API_KEY") or os.environ.get("GOOGLE_API_KEY")
 if not api_key:
     st.error("Chave da API do Google não encontrada.")
     st.stop()
-
 genai.configure(api_key=api_key)
 model = genai.GenerativeModel('gemini-pro-latest')
 
@@ -28,9 +29,8 @@ if 'df_dados' not in st.session_state:
 if 'df_mapeamento' not in st.session_state:
     st.session_state.df_mapeamento = None
 
-# --- Funções ---
+# --- Blacklist ---
 BLACKLIST = ["FCA", "CHRYSLER", "STELLANTIS", "CEABS"]
-
 def aplicar_blacklist(df):
     df_filtrado = df.copy()
     for col in df_filtrado.select_dtypes(include='object').columns:
@@ -38,6 +38,7 @@ def aplicar_blacklist(df):
         df_filtrado = df_filtrado[~mask]
     return df_filtrado
 
+# --- Funções de análise e carregamento ---
 @st.cache_data(ttl=3600)
 def executar_analise_pandas(_df_hash, pergunta, df_type):
     df = st.session_state.df_dados if df_type == 'dados' else st.session_state.df_mapeamento
@@ -77,14 +78,16 @@ def carregar_dataframe(arquivo, separador_padrao=','):
         return pd.read_csv(arquivo, encoding='latin-1', sep=outro_sep, on_bad_lines='skip')
     return None
 
-# --- Função para gráficos de fechamentos problemáticos ---
-def grafico_fechamentos_problematicos(df, status_col, tipo_fechamento_col, rep_col, fechamento_selecionado, top_n=15):
-    df_filtrado = df[(df[status_col] != 'Realizada') & (df[tipo_fechamento_col] == fechamento_selecionado)]
-    if df_filtrado.empty:
-        return pd.DataFrame(columns=[rep_col, 'Quantidade'])
-    df_contagem = df_filtrado.groupby(rep_col).size().reset_index(name='Quantidade')
-    df_contagem = df_contagem.sort_values(by='Quantidade', ascending=False).head(top_n)
-    return df_contagem
+# --- Função para gráficos ordenados ---
+def grafico_ordens(df, filtro_col=None, filtro_val=None, group_col=None, top_n=10):
+    df_filtrado = df.copy()
+    if filtro_col and filtro_val and filtro_val != "Todos":
+        df_filtrado = df_filtrado[df_filtrado[filtro_col]==filtro_val]
+    if group_col:
+        df_contagem = df_filtrado.groupby(group_col).size().reset_index(name='Quantidade')
+        df_contagem = df_contagem.sort_values(by='Quantidade', ascending=False).head(top_n)
+        return df_contagem
+    return None
 
 # --- Barra Lateral ---
 with st.sidebar:
@@ -109,162 +112,73 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-# --- DASHBOARD PRINCIPAL ---
+# --- DASHBOARD ---
 if st.session_state.df_dados is not None:
     st.markdown("---")
-    st.header("📊 Dashboard de Análise de OS")
+    st.header("📊 Dashboard de Ordens de Serviço")
     df_dados = aplicar_blacklist(st.session_state.df_dados.copy())
 
     status_col = next((col for col in df_dados.columns if 'status' in col.lower()), None)
-    rep_col = next((col for col in df_dados.columns if 'representante técnico' in col.lower() and 'id' not in col.lower()), None)
-    city_col = next((col for col in df_dados.columns if 'cidade agendamento' in col.lower()), None)
+    rep_col = next((col for col in df_dados.columns if 'representante técnico' in col.lower()), None)
+    city_col = next((col for col in df_dados.columns if 'cidade' in col.lower()), None)
     tipo_fechamento_col = next((col for col in df_dados.columns if 'tipo de fechamento' in col.lower()), None)
 
-    # --- Filtros ---
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
-        status_opcoes = ["Todos"] + sorted(df_dados[status_col].dropna().unique())
-        status_selecionado = st.selectbox("Filtrar por Status:", status_opcoes)
-    with col_f2:
-        cidade_opcoes = ["Todos"] + sorted(df_dados[city_col].dropna().unique())
-        cidade_selecionada = st.selectbox("Filtrar por Cidade:", cidade_opcoes)
-
-    df_filtrado_dash = df_dados.copy()
-    if status_selecionado != "Todos":
-        df_filtrado_dash = df_filtrado_dash[df_filtrado_dash[status_col]==status_selecionado]
-    if cidade_selecionada != "Todos":
-        df_filtrado_dash = df_filtrado_dash[df_filtrado_dash[city_col]==cidade_selecionada]
-
     col1, col2 = st.columns(2)
     with col1:
-        if status_col and city_col:
-            st.write("Ordens Agendadas por Cidade (Top 10)")
-            st.bar_chart(
-                df_filtrado_dash[df_filtrado_dash[status_col]=='Agendada'][city_col]
-                .value_counts()
-                .sort_values(ascending=False)
-                .nlargest(10)
-            )
-        if status_col and rep_col:
-            st.write("Ordens Realizadas por RT (Top 10)")
-            st.bar_chart(
-                df_filtrado_dash[df_filtrado_dash[status_col]=='Realizada'][rep_col]
-                .value_counts()
-                .sort_values(ascending=False)
-                .nlargest(10)
-            )
+        st.write("Ordens Agendadas por Cidade (Top 10)")
+        chart1 = grafico_ordens(df_dados, filtro_col=status_col, filtro_val='Agendada', group_col=city_col)
+        if chart1 is not None: st.bar_chart(chart1.set_index(city_col)['Quantidade'])
+
+        st.write("Ordens Realizadas por RT (Top 10)")
+        chart2 = grafico_ordens(df_dados, filtro_col=status_col, filtro_val='Realizada', group_col=rep_col)
+        if chart2 is not None: st.bar_chart(chart2.set_index(rep_col)['Quantidade'])
+
     with col2:
-        if rep_col:
-            st.write("Total de Ordens por RT (Top 10)")
-            st.bar_chart(
-                df_filtrado_dash[rep_col]
-                .value_counts()
-                .sort_values(ascending=False)
-                .nlargest(10)
-            )
-        if tipo_fechamento_col and rep_col:
-            st.write("Indisponibilidades por RT (Top 10)")
-            st.bar_chart(
-                df_filtrado_dash[df_filtrado_dash[tipo_fechamento_col]=='Visita Improdutiva'][rep_col]
-                .value_counts()
-                .sort_values(ascending=False)
-                .nlargest(10)
-            )
+        st.write("Total de Ordens por RT (Top 10)")
+        chart3 = grafico_ordens(df_dados, group_col=rep_col)
+        if chart3 is not None: st.bar_chart(chart3.set_index(rep_col)['Quantidade'])
 
-    with st.expander("Ver tabela completa com filtros"):
-        st.dataframe(df_filtrado_dash)
+        st.write("Indisponibilidades (Visitas Improdutivas) por RT (Top 10)")
+        chart4 = grafico_ordens(df_dados, filtro_col=tipo_fechamento_col, filtro_val='Visita Improdutiva', group_col=rep_col)
+        if chart4 is not None: st.bar_chart(chart4.set_index(rep_col)['Quantidade'])
 
-# --- VISÕES ESPECÍFICAS ADICIONAIS ---
-if st.session_state.df_dados is not None:
+# --- MAPEAMENTO ---
+if st.session_state.df_mapeamento is not None:
     st.markdown("---")
-    st.subheader("📌 Visões Específicas")
-
-    # Realizada - Serviços realizados
-    df_realizada_servicos = df_dados[
-        (df_dados[status_col]=='Realizada') & (df_dados[tipo_fechamento_col]=='Serviços realizados')
-    ]
-    st.write("✅ Ordens Realizadas - Serviços realizados")
-    st.bar_chart(
-        df_realizada_servicos[rep_col].value_counts().sort_values(ascending=False).nlargest(15)
-    )
-
-    # Realizada - Serviços parcialmente realizados
-    df_realizada_parcial = df_dados[
-        (df_dados[status_col]=='Realizada') & (df_dados[tipo_fechamento_col]=='Serviços parcialmente realizados')
-    ]
-    st.write("✅ Ordens Realizadas - Serviços parcialmente realizados")
-    st.bar_chart(
-        df_realizada_parcial[rep_col].value_counts().sort_values(ascending=False).nlargest(15)
-    )
-
-    # Não realizadas - Fechamentos problemáticos
-    tipos_nao_realizadas = [
-        'Indisponibilidade técnica',
-        'Visita Improdutiva',
-        'Reagendamento solicitado',
-        'Não comparecimento do técnico'
-    ]
-
-    col1, col2 = st.columns(2)
-    with col1:
-        fechamento1 = st.selectbox(
-            "Filtrar gráfico 1 - Tipo de Fechamento Problemático",
-            tipos_nao_realizadas, key='fech1'
-        )
-        df_graf1 = grafico_fechamentos_problematicos(
-            df_dados, status_col, tipo_fechamento_col, rep_col, fechamento1
-        )
-        st.write(f"❌ {fechamento1} - Top 15 RTs")
-        if not df_graf1.empty:
-            st.bar_chart(df_graf1.set_index(rep_col)['Quantidade'])
-        else:
-            st.info("Nenhuma ocorrência encontrada.")
-
-    with col2:
-        fechamento2 = st.selectbox(
-            "Filtrar gráfico 2 - Tipo de Fechamento Problemático",
-            tipos_nao_realizadas, key='fech2'
-        )
-        df_graf2 = grafico_fechamentos_problematicos(
-            df_dados, status_col, tipo_fechamento_col, rep_col, fechamento2
-        )
-        st.write(f"❌ {fechamento2} - Top 15 RTs")
-        if not df_graf2.empty:
-            st.bar_chart(df_graf2.set_index(rep_col)['Quantidade'])
-        else:
-            st.info("Nenhuma ocorrência encontrada.")
-
-# --- CHAT ---
-st.markdown("---")
-st.header("💬 Chat com IA")
-for message in st.session_state.display_history:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-if prompt := st.chat_input("Faça uma pergunta específica..."):
-    st.session_state.display_history.append({"role":"user","content":prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    st.header("🗺️ Ferramenta de Mapeamento de RT")
+    df_map = st.session_state.df_mapeamento.copy()
+    city_col_map, rep_col_map, lat_col, lon_col, km_col = 'nm_cidade_atendimento', 'nm_representante', 'cd_latitude_atendimento', 'cd_longitude_atendimento', 'qt_distancia_atendimento_km'
     
-    df_type = 'chat'
-    if any(k in prompt.lower() for k in ["quem atende","representante","mapeamento"]) and st.session_state.df_mapeamento is not None:
-        df_type='mapeamento'
-    elif st.session_state.df_dados is not None:
-        df_type='dados'
+    if all(col in df_map.columns for col in [city_col_map, rep_col_map, lat_col, lon_col, km_col]):
+        col1, col2 = st.columns(2)
+        cidade_selecionada_map = col1.selectbox("Cidade:", sorted(df_map[city_col_map].dropna().unique()))
+        rep_selecionado_map = col2.selectbox("Representante:", sorted(df_map[rep_col_map].dropna().unique()))
+        filtered_map = df_map
+        if cidade_selecionada_map: filtered_map = filtered_map[filtered_map[city_col_map]==cidade_selecionada_map]
+        if rep_selecionado_map: filtered_map = filtered_map[filtered_map[rep_col_map]==rep_selecionado_map]
+        st.dataframe(filtered_map)
+        map_data = filtered_map.rename(columns={lat_col:'lat', lon_col:'lon'})
+        st.map(map_data.dropna(subset=['lat','lon']))
 
-    with st.chat_message("assistant"):
-        if df_type in ['mapeamento','dados']:
-            df_hash = pd.util.hash_pandas_object(st.session_state.get(f"df_{df_type}")).sum()
-            resultado, erro = executar_analise_pandas(df_hash, prompt, df_type)
-            if erro=="PERGUNTA_INVALIDA":
-                response_text = "Desculpe, só posso responder perguntas relacionadas aos dados carregados."
-            elif erro:
-                st.error(erro)
-                response_text = "Não foi possível analisar os dados."
-            else:
-                if isinstance(resultado, (pd.Series, pd.DataFrame)):
-                    st.dataframe(resultado)
-                    response_text = "Resultado exibido na tabela acima."
-                else:
-                    response_text = f"Resultado: {resultado}"
-        st.markdown(response_text)
+# --- OTIMIZADOR DE PROXIMIDADE ---
+if st.session_state.df_dados is not None and st.session_state.df_mapeamento is not None:
+    st.markdown("---")
+    with st.expander("🚚 Otimizador de Proximidade de RT"):
+        df_agendadas = st.session_state.df_dados[st.session_state.df_dados[status_col]=='Agendada'].copy()
+        if not df_agendadas.empty:
+            cidades_disponiveis = df_agendadas[city_col].dropna().unique()
+            cidade_sel = st.selectbox("Selecione cidade:", sorted(cidades_disponiveis))
+            if cidade_sel:
+                ordens = df_agendadas[df_agendadas[city_col]==cidade_sel]
+                st.dataframe(ordens)
+                df_map_sel = st.session_state.df_mapeamento[st.session_state.df_mapeamento[city_col_map]==cidade_sel]
+                if not df_map_sel.empty:
+                    ponto_atendimento = (df_map_sel.iloc[0][lat_col], df_map_sel.iloc[0][lon_col])
+                    distancias = [{'Representante': r[rep_col_map], 'Distancia (km)': haversine((r['cd_latitude_representante'], r['cd_longitude_representante']), ponto_atendimento, unit=Unit.KILOMETERS)} for _,r in st.session_state.df_mapeamento.iterrows()]
+                    df_dist = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
+                    rt_sugerido = df_dist.loc[df_dist['Distancia (km)'].idxmin()]
+                    for _, ordem in ordens.iterrows():
+                        rt_atual = ordem[rep_col]
+                        dist_atual = df_dist[df_dist['Representante']==rt_atual]['Distancia (km)'].values
+                        dist_atual = dist_atual[0] if len(dist_atual)>0 else float('inf')
+                        st.write(f"OS {ordem[0]} | RT Atual: {rt_atual} ({dist_atual:.1f} km) | Sugestão: {rt_sugerido['Representante']} ({rt_sugerido['Distancia (km)']:.1f} km)")
