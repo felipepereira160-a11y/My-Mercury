@@ -12,8 +12,8 @@ from datetime import datetime
 st.set_page_config(page_title="Seu Assistente de Dados com IA", page_icon="🧠", layout="wide")
 
 # --- Título ---
-st.title("🧠 Seu Assistente de Dados com IA")
-st.write("Converse comigo ou faça o upload de seus arquivos na barra lateral para começar a analisar!")
+st.title("🧠 Mercúrio IA")
+st.write("Faça o upload de seus arquivos na barra lateral!")
 
 # --- Lógica robusta para carregar a chave da API ---
 api_key = None
@@ -488,7 +488,7 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
 
 # --- Seção do Chat de IA ---
 st.markdown("---")
-st.header("💬 Converse com a IA para análises personalizadas")
+st.header("💬 Converse com a IA")
 for message in st.session_state.display_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
