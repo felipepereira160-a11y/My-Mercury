@@ -526,7 +526,6 @@ if prompt := st.chat_input("Faça uma pergunta específica..."):
                 st.markdown(response_text)
         else: # modo chat genérico
             with st.spinner("Pensando..."):
-                try:
     response = st.session_state.chat.generate_message(prompt)
     response_text = response.text
 except Exception as e:
