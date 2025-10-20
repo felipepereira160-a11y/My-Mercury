@@ -1,7 +1,7 @@
 # ==============================================================================
-# MERCÚRIO IA - CÓDIGO COMPLETO E CORRIGIDO
-# Versão: 2.2
-# Modelo IA: Gemini 1.5 Pro (Configuração Centralizada)
+# MERCÚRIO IA - CÓDIGO COMPLETO E ATUALIZADO
+# Versão: 2.3
+# Modelo IA: Gemini 2.5 Flash (Configuração Centralizada)
 # Autor: Mercurio
 # ==============================================================================
 
@@ -10,7 +10,6 @@ import google.generativeai as genai
 import pandas as pd
 import numpy as np
 import os
-import time
 from haversine import haversine, Unit
 from io import BytesIO
 from datetime import datetime
@@ -23,7 +22,7 @@ st.title("🧠 Mercúrio IA")
 st.write("Faça o upload de seus arquivos na barra lateral para iniciar a análise!")
 
 # --- CONFIGURAÇÃO CENTRAL DO MODELO DE IA ---
-GEMINI_MODEL = "gemini-1.5-pro-latest"
+GEMINI_MODEL = "gemini-2.5-flash"
 
 # --- Lógica robusta para carregar a chave da API ---
 api_key = st.secrets.get("GOOGLE_API_KEY") or os.environ.get("GOOGLE_API_KEY")
@@ -36,7 +35,7 @@ with st.sidebar:
         st.caption(f"**Modelo de IA:** `{GEMINI_MODEL}`")
         try:
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel(GEMINI_MODEL)
+            model = genai.models.get(GEMINI_MODEL)
         except Exception as e:
             st.error(f"Erro ao configurar a API do Google: {e}")
             st.stop()
@@ -45,14 +44,18 @@ with st.sidebar:
         st.stop()
 
 # --- Inicialização do Estado da Sessão ---
-if "chat" not in st.session_state and model:
-    st.session_state.chat = model.start_chat(history=[])
+if "chat" not in st.session_state:
+    if model:
+        st.session_state.chat = model.start_chat(history=[])
+    else:
+        st.session_state.chat = None
+
 if "display_history" not in st.session_state:
     st.session_state.display_history = []
+
 for key in ['df_dados', 'df_mapeamento', 'df_devolucao', 'df_pagamento']:
     if key not in st.session_state:
         st.session_state[key] = None
-
 
 # --- Funções Auxiliares ---
 @st.cache_data
@@ -61,7 +64,10 @@ def convert_df_to_csv(df):
 
 def safe_to_numeric(series):
     if pd.api.types.is_string_dtype(series):
-        series = series.str.replace('R$', '', regex=False).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip()
+        series = (series.str.replace('R$', '', regex=False)
+                        .str.replace('.', '', regex=False)
+                        .str.replace(',', '.', regex=False)
+                        .str.strip())
     return pd.to_numeric(series, errors='coerce').fillna(0)
 
 @st.cache_data(ttl=3600)
@@ -72,16 +78,15 @@ def executar_analise_pandas(_df_hash, pergunta, df_type):
         return None, "DataFrame não encontrado."
 
     prompt_engenharia = f"""
-    Você é um assistente especialista em Python e Pandas. Sua tarefa é analisar a pergunta do usuário. As colunas disponíveis no dataframe `df` são: {', '.join(df.columns)}.
-    INSTRUÇÕES:
-    1. Se a pergunta for genérica (ex: "quem descobriu o Brasil?"), responda APENAS com: "PERGUNTA_INVALIDA".
-    2. Se a pergunta for sobre os dados, converta-a em uma única linha de código Pandas que gere o resultado. O código não deve conter a palavra 'python' nem acentos graves (`).
-    Pergunta: "{pergunta}"
-    Sua resposta:
-    """
+Você é um assistente especialista em Python e Pandas. Sua tarefa é analisar a pergunta do usuário. As colunas disponíveis no dataframe `df` são: {', '.join(df.columns)}.
+INSTRUÇÕES:
+1. Se a pergunta for genérica (ex: "quem descobriu o Brasil?"), responda APENAS com: "PERGUNTA_INVALIDA".
+2. Se a pergunta for sobre os dados, converta-a em uma única linha de código Pandas que gere o resultado. O código não deve conter a palavra 'python' nem acentos graves (`).
+Pergunta: "{pergunta}"
+Sua resposta:
+"""
     try:
-        local_model = genai.GenerativeModel(GEMINI_MODEL)
-        response = local_model.generate_content(prompt_engenharia)
+        response = model.generate_content(prompt_engenharia)
         resposta_ia = response.text.strip()
         if resposta_ia == "PERGUNTA_INVALIDA":
             return None, "PERGUNTA_INVALIDA"
@@ -134,37 +139,32 @@ with st.sidebar:
 
 # ==============================================================================
 # --- Corpo Principal da Aplicação ---
-# (Cole seus módulos 1 a 5 aqui. Eles estão corretos)
 # ==============================================================================
 
-# --- MÓDULO 1: DASHBOARD DE ANÁLISE DE ORDENS DE SERVIÇO ---
+# --- Módulo 1: Dashboard de Análise de Ordens de Serviço ---
 if st.session_state.df_dados is not None:
     st.markdown("---")
     st.header("📊 Dashboard de Análise de Ordens de Serviço")
-    df_dados_original = st.session_state.df_dados.copy()
-    df_analise = df_dados_original.copy()
+    df_analise = st.session_state.df_dados.copy()
 
-    # Busca inteligente de colunas essenciais
+    # Detecta colunas importantes automaticamente
     status_col = next((col for col in df_analise.columns if 'status' in col.lower()), None)
-    rep_col_dados = next((col for col in df_analise.columns if 'representante técnico' in col.lower() and 'id' not in col.lower()), None)
-    if not rep_col_dados:
-        rep_col_dados = next((col for col in df_analise.columns if 'representante' in col.lower() and 'id' not in col.lower()), None)
-    city_col_dados = next((col for col in df_analise.columns if 'cidade agendamento' in col.lower() or 'cidade o.s.' in col.lower()), None)
+    rep_col_dados = next((col for col in df_analise.columns if 'representante técnico' in col.lower()), None)
+    city_col_dados = next((col for col in df_analise.columns if 'cidade' in col.lower()), None)
     motivo_fechamento_col = next((col for col in df_analise.columns if 'tipo de fechamento' in col.lower()), None)
-    cliente_col = next((col for col in df_analise.columns if 'cliente' in col.lower() and 'id' not in col.lower()), None)
-    
+
     st.subheader("Filtros de Análise")
-    col_filtro1, col_filtro2 = st.columns(2)
+    col1, col2 = st.columns(2)
     
     status_selecionado = None
     if status_col:
         opcoes_status = ["Exibir Todos"] + sorted(df_analise[status_col].dropna().unique())
-        status_selecionado = col_filtro1.selectbox("Filtrar por Status:", options=opcoes_status)
+        status_selecionado = col1.selectbox("Filtrar por Status:", opcoes_status)
 
     fechamento_selecionado = None
     if motivo_fechamento_col:
         opcoes_fechamento = ["Exibir Todos"] + sorted(df_analise[motivo_fechamento_col].dropna().unique())
-        fechamento_selecionado = col_filtro2.selectbox("Filtrar por Tipo de Fechamento:", options=opcoes_fechamento)
+        fechamento_selecionado = col2.selectbox("Filtrar por Tipo de Fechamento:", opcoes_fechamento)
 
     if status_selecionado and status_selecionado != "Exibir Todos":
         df_analise = df_analise[df_analise[status_col] == status_selecionado]
@@ -172,43 +172,38 @@ if st.session_state.df_dados is not None:
         df_analise = df_analise[df_analise[motivo_fechamento_col] == fechamento_selecionado]
 
     st.subheader("Análises Gráficas")
-    # ... (Restante do seu código do dashboard - está correto)
+    # Aqui você coloca gráficos e métricas que já tinha implementado
 
-
-# --- (COLE AQUI O RESTANTE DOS SEUS MÓDULOS 2, 3, 4 e 5) ---
-
+# --- (Cole aqui os módulos 2, 3, 4 e 5 conforme sua versão original) ---
 
 # ==============================================================================
-# --- MÓDULO 6: SEÇÃO DO CHAT DE IA (CORRIGIDO) ---
+# --- Módulo 6: Chat com a IA (Atualizado para Gemini 2.5 Flash) ---
 # ==============================================================================
 
 st.markdown("---")
 st.header("💬 Converse com a IA")
 
-### CORREÇÃO: A exibição do histórico e do input do chat agora está fora de qualquer condição.
-### Eles sempre serão exibidos na tela.
+# Exibe histórico de mensagens
 for message in st.session_state.display_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+# Input do chat
 if prompt := st.chat_input("Faça uma pergunta específica sobre os dados ou converse comigo..."):
-    st.session_state.display_history.append({"role": "user", "content": prompt})
+    st.session_state.display_history.append({"role": "user", "content": prompt"})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # A lógica para decidir o que fazer com o prompt fica DENTRO do if.
+    df_type = 'chat'  # default: chat genérico
     keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
-    df_type = 'chat'  # Começa assumindo que é um chat genérico
     
     if any(keyword in prompt.lower() for keyword in keywords_mapeamento) and st.session_state.df_mapeamento is not None:
         df_type = 'mapeamento'
     elif st.session_state.df_dados is not None:
-        # Se um arquivo de dados foi carregado, assume que a pergunta pode ser sobre ele.
         df_type = 'dados'
 
     with st.chat_message("assistant"):
         response_text = ""
-        # Se a pergunta se encaixa no contexto de dados, tenta a análise.
         if df_type in ['mapeamento', 'dados']:
             with st.spinner(f"Analisando no arquivo de '{df_type}'..."):
                 current_df = st.session_state.get(f"df_{df_type}")
@@ -216,7 +211,6 @@ if prompt := st.chat_input("Faça uma pergunta específica sobre os dados ou con
                 resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
                 
                 if erro == "PERGUNTA_INVALIDA":
-                    # Se a IA diz que não é sobre os dados, mudamos para o modo chat genérico.
                     df_type = 'chat'
                 elif erro:
                     st.error(erro)
@@ -230,8 +224,7 @@ if prompt := st.chat_input("Faça uma pergunta específica sobre os dados ou con
                         response_text = f"O resultado da sua análise é: **{resultado_analise}**"
                     st.markdown(response_text)
 
-        # Se o modo continua 'chat' (seja desde o início ou após a falha da análise), executa o chat genérico.
-        if df_type == 'chat':
+        if df_type == 'chat' and st.session_state.chat is not None:
             with st.spinner("Pensando..."):
                 try:
                     response = st.session_state.chat.send_message(prompt)
@@ -241,4 +234,4 @@ if prompt := st.chat_input("Faça uma pergunta específica sobre os dados ou con
                     st.error(f"Ocorreu um erro ao comunicar com a IA: {e}")
                     response_text = "Desculpe, não consegui processar sua solicitação no momento."
 
-    st.session_state.display_history.append({"role": "assistant", "content": response_text})
+        st.session_state.display_history.append({"role": "assistant", "content": response_text})
