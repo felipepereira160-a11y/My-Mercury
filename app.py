@@ -24,7 +24,7 @@ st.write("Faça o upload de seus arquivos na barra lateral para iniciar a análi
 # --- CONFIGURAÇÃO CENTRAL DO MODELO DE IA ---
 # CORREÇÃO: Usando um nome de modelo moderno e estável.
 # Se o erro 404 persistir, troque para "gemini-pro" para máxima compatibilidade.
-GEMINI_MODEL = "gemini-1.5-flash"
+GEMINI_MODEL = "gemini-1.5"
 
 # --- Lógica robusta para carregar a chave da API ---
 api_key = st.secrets.get("GOOGLE_API_KEY") or os.environ.get("GOOGLE_API_KEY")
