@@ -1,7 +1,7 @@
 # ==============================================================================
-# MERCÚRIO IA - CÓDIGO FINAL UNIFICADO
-# Versão: 5.0
-# Modelo IA: Gemini 1.5 Pro Latest (Configuração Otimizada)
+# MERCÚRIO IA - CÓDIGO FINAL, UNIFICADO E CORRIGIDO
+# Versão: 5.1
+# Modelo IA: Gemini 1.5 Pro Latest (Melhor Prática)
 # Autor: Mercurio
 # ==============================================================================
 
@@ -22,8 +22,7 @@ st.title("🧠 Mercúrio IA")
 st.write("Faça o upload de seus arquivos na barra lateral para análises e converse com a IA!")
 
 # --- CONFIGURAÇÃO CENTRAL DA API E MODELO ---
-# Usando o alias para o melhor modelo Pro disponível publicamente.
-# Garante que você sempre use a versão mais poderosa e atual.
+# Com a biblioteca atualizada, este alias é a melhor prática para sempre usar a versão mais recente.
 GEMINI_MODEL = "gemini-1.5-pro-latest"
 
 # Carrega a chave da API de forma segura
@@ -43,6 +42,7 @@ with st.sidebar:
             model = genai.GenerativeModel(GEMINI_MODEL)
         except Exception as e:
             st.error(f"Erro fatal na inicialização da API: {e}")
+            st.exception(e) # Exibe o erro completo para debug
             st.stop()
     else:
         st.error("❌ Chave de API não encontrada. A aplicação não pode funcionar.")
@@ -78,16 +78,13 @@ def executar_analise_pandas(_df_hash, pergunta, df_type):
 
     prompt_engenharia = f"""
 Você é um assistente especialista em Python e Pandas. Sua tarefa é analisar a pergunta do usuário. As colunas disponíveis são: {', '.join(df.columns)}.
-INSTRUÇÕES:
-1. Se a pergunta for genérica (ex: "quem descobriu o Brasil?"), responda APENAS com: "PERGUNTA_INVALIDA".
-2. Se a pergunta for sobre os dados, converta-a em uma única linha de código Pandas que gere o resultado. O código não deve conter a palavra 'python' nem acentos graves (`).
+INSTRUÇÕES: Se a pergunta for genérica (ex: "quem descobriu o Brasil?"), responda com "PERGUNTA_INVALIDA". Caso contrário, converta a pergunta em uma única linha de código Pandas que gere o resultado, sem usar 'python' ou ```.
 Pergunta: "{pergunta}"
 Sua resposta:
 """
     try:
-        # Usa o modelo global já inicializado
         response = model.generate_content(prompt_engenharia)
-        resposta_ia = response.text.strip()
+        resposta_ia = response.text.strip().replace('`', '')
         if resposta_ia == "PERGUNTA_INVALIDA": return None, "PERGUNTA_INVALIDA"
         resultado = eval(resposta_ia, {'df': df, 'pd': pd})
         return resultado, None
@@ -135,43 +132,11 @@ with st.sidebar:
 # --- Corpo Principal da Aplicação (MÓDULOS DE ANÁLISE) ---
 # ==============================================================================
 
-# --- MÓDULO 1: DASHBOARD DE ANÁLISE DE ORDENS DE SERVIÇO ---
-if st.session_state.df_dados is not None:
-    st.markdown("---")
-    st.header("📊 Dashboard de Análise de Ordens de Serviço")
-    df_dados_original = st.session_state.df_dados.copy()
-    df_analise = df_dados_original.copy()
-    status_col = next((col for col in df_analise.columns if 'status' in col.lower()), None)
-    rep_col_dados = next((col for col in df_analise.columns if 'representante' in col.lower() and 'id' not in col.lower()), None)
-    city_col_dados = next((col for col in df_analise.columns if 'cidade' in col.lower()), None)
-    motivo_fechamento_col = next((col for col in df_analise.columns if 'tipo de fechamento' in col.lower()), None)
-    cliente_col = next((col for col in df_analise.columns if 'cliente' in col.lower() and 'id' not in col.lower()), None)
-
-    # ... (O resto do seu código completo do Dashboard vai aqui) ...
-
-# --- MÓDULO 2: ANALISADOR DE CUSTOS E DUPLICIDADE ---
-if st.session_state.df_pagamento is not None:
-    st.markdown("---")
-    st.header("🔎 Analisador de Custos e Duplicidade de Deslocamento")
-    # ... (O seu código completo do Analisador de Custos vai aqui) ...
-
-# --- MÓDULO 3: FERRAMENTA DE DEVOLUÇÃO DE ORDENS ---
-if st.session_state.df_devolucao is not None:
-    st.markdown("---")
-    st.header("📦 Ferramenta de Devolução de Ordens Vencidas")
-    # ... (O seu código completo da Ferramenta de Devolução vai aqui) ...
-
-# --- MÓDULO 4: FERRAMENTA DE MAPEAMENTO ---
-if st.session_state.df_mapeamento is not None:
-    st.markdown("---")
-    st.header("🗺️ Ferramenta de Mapeamento e Consulta de RT")
-    # ... (O seu código completo da Ferramenta de Mapeamento vai aqui) ...
-
-# --- MÓDULO 5: OTIMIZADOR DE PROXIMIDADE ---
-if st.session_state.df_dados is not None and st.session_state.df_mapeamento is not None:
-    st.markdown("---")
-    st.header("🚚 Otimizador de Proximidade de RT")
-    # ... (O seu código completo do Otimizador vai aqui) ...
+### COLE AQUI OS SEUS MÓDULOS COMPLETOS DE 1 A 5 ###
+# (Dashboard, Duplicidade, Devolução, Mapeamento, Otimizador)
+# Exemplo:
+# if st.session_state.df_dados is not None:
+#     ... seu código completo do Dashboard ...
 
 # ==============================================================================
 # --- Módulo Final: Chat com a IA (UNIFICADO E FUNCIONAL) ---
@@ -189,43 +154,31 @@ if prompt := st.chat_input("Faça uma pergunta específica sobre os dados ou con
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Lógica híbrida para determinar o contexto da pergunta
     df_type = 'chat'
     keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
     if any(keyword in prompt.lower() for keyword in keywords_mapeamento) and st.session_state.df_mapeamento is not None:
         df_type = 'mapeamento'
     elif st.session_state.df_dados is not None:
-        # Se um arquivo de dados geral foi carregado, ele se torna o contexto padrão para análise
         df_type = 'dados'
 
     with st.chat_message("assistant"):
         response_text = ""
-        # 1. Tenta a análise de dados primeiro
         if df_type in ['mapeamento', 'dados']:
             with st.spinner(f"Analisando no arquivo de '{df_type}'..."):
                 current_df = st.session_state.get(f"df_{df_type}")
-                if current_df is not None:
-                    df_hash = pd.util.hash_pandas_object(current_df).sum()
-                    resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
-                    
-                    if erro == "PERGUNTA_INVALIDA":
-                        df_type = 'chat'  # Se a IA diz que não é sobre dados, muda para chat
-                    elif erro:
-                        st.error(erro)
-                        response_text = "Desculpe, não consegui analisar sua pergunta nos dados."
+                df_hash = pd.util.hash_pandas_object(current_df).sum()
+                resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
+                if erro == "PERGUNTA_INVALIDA": df_type = 'chat'
+                elif erro:
+                    st.error(erro); response_text = "Desculpe, não consegui analisar sua pergunta nos dados."
+                else:
+                    if isinstance(resultado_analise, (pd.Series, pd.DataFrame)):
+                        st.write(f"Resultado da busca na base de '{df_type}':"); st.dataframe(resultado_analise)
+                        response_text = "A informação que você pediu está na tabela acima."
                     else:
-                        if isinstance(resultado_analise, (pd.Series, pd.DataFrame)):
-                            st.write(f"Resultado da busca na base de '{df_type}':")
-                            st.dataframe(resultado_analise)
-                            response_text = "A informação que você pediu está na tabela acima."
-                        else:
-                            response_text = f"O resultado da sua análise é: **{resultado_analise}**"
-                        st.markdown(response_text)
-                else: 
-                    response_text = "Nenhum arquivo de dados correspondente foi carregado para análise."
-                    st.warning(response_text)
-
-        # 2. Se o tipo for 'chat' (desde o início ou após o fallback), executa o chat conversacional
+                        response_text = f"O resultado da sua análise é: **{resultado_analise}**"
+                    st.markdown(response_text)
+        
         if df_type == 'chat':
             with st.spinner("Pensando..."):
                 try:
@@ -238,9 +191,8 @@ if prompt := st.chat_input("Faça uma pergunta específica sobre os dados ou con
                         st.error(response_text)
                 except Exception as e:
                     st.error("🚨 ERRO CRÍTICO NA COMUNICAÇÃO COM A API 🚨")
-                    st.exception(e) # Exibe o erro completo para debug
+                    st.exception(e)
                     response_text = "Falha na comunicação com a API. Verifique o erro detalhado acima."
     
-    # Adiciona a resposta final ao histórico, evitando mensagens de erro vazias
     if response_text:
         st.session_state.display_history.append({"role": "assistant", "content": response_text})
