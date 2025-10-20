@@ -131,49 +131,59 @@ with st.sidebar:
 # O código original que você enviou já é compatível com essa versão do modelo, apenas substituí a inicialização do `GenerativeModel` 
 # para `gemini-2.5-pro` e a chamada `model.generate_content(...)` dentro da função `executar_analise_pandas`.
 
-# --- Chat IA ---
+# ==============================================================================
+# --- Módulo 6: Chat com a IA (Funcional e Unificado) ---
+# ==============================================================================
+
 st.markdown("---")
 st.header("💬 Converse com a IA")
+
 for message in st.session_state.display_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("Faça uma pergunta específica..."):
+if prompt := st.chat_input("Faça uma pergunta específica sobre os dados ou converse comigo..."):
     st.session_state.display_history.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
     df_type = 'chat'
+    keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
     
     if any(keyword in prompt.lower() for keyword in keywords_mapeamento) and st.session_state.df_mapeamento is not None:
         df_type = 'mapeamento'
     elif st.session_state.df_dados is not None:
         df_type = 'dados'
-    
+
     with st.chat_message("assistant"):
+        response_text = ""
         if df_type in ['mapeamento', 'dados']:
             with st.spinner(f"Analisando no arquivo de '{df_type}'..."):
                 current_df = st.session_state.get(f"df_{df_type}")
                 df_hash = pd.util.hash_pandas_object(current_df).sum()
                 resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
-                
-                if erro == "PERGUNTA_INVALIDA":
-                    response_text = "Desculpe, só posso responder a perguntas relacionadas aos dados da planilha carregada."
+                if erro == "PERGUNTA_INVALIDA": df_type = 'chat'
                 elif erro:
-                    st.error(erro)
-                    response_text = "Desculpe, não consegui analisar os dados."
+                    st.error(erro); response_text = "Desculpe, não consegui analisar sua pergunta nos dados."
                 else:
                     if isinstance(resultado_analise, (pd.Series, pd.DataFrame)):
-                        st.dataframe(resultado_analise)
+                        st.write(f"Resultado da busca na base de '{df_type}':"); st.dataframe(resultado_analise)
                         response_text = "A informação que você pediu está na tabela acima."
                     else:
                         response_text = f"O resultado da sua análise é: **{resultado_analise}**"
-                st.markdown(response_text)
-        else:
+                    st.markdown(response_text)
+        
+        if df_type == 'chat':
             with st.spinner("Pensando..."):
-                response = st.session_state.chat.send_message(prompt)
-                response_text = response.text
-                st.markdown(response_text)
+                try:
+                    if st.session_state.chat:
+                        response = st.session_state.chat.send_message(prompt)
+                        response_text = response.text
+                        st.markdown(response_text)
+                    else:
+                        response_text = "O serviço de chat não foi inicializado corretamente."
+                        st.error(response_text)
+                except Exception as e:
+                    st.error(f"Erro ao comunicar com a IA: {e}"); response_text = "Desculpe, não consegui processar sua solicitação."
     
     st.session_state.display_history.append({"role": "assistant", "content": response_text})
