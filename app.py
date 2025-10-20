@@ -1,4 +1,3 @@
-500 linhas SUPOER OK - FALTA SOMENTE VERSAO CHAT
 
 import streamlit as st
 import google.generativeai as genai
