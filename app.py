@@ -190,7 +190,7 @@ for message in st.session_state.display_history:
 
 # Input do chat
 if prompt := st.chat_input("Faça uma pergunta específica sobre os dados ou converse comigo..."):
-    st.session_state.display_history.append({"role": "user", "content": prompt"})
+    st.session_state.display_history.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
