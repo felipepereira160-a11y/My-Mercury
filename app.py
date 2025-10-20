@@ -194,65 +194,118 @@ with st.sidebar:
         else:
             st.error("Falha ao carregar pagamentos. Verifique o arquivo.")
 
-# ============================
-# OTIMIZADOR DE RT
-# ============================
-st.header("🔧 Otimizador de RT")
+# --- OTIMIZADOR DE PROXIMIDADE (Usa df_dados e df_mapeamento) ---
+if st.session_state.df_dados is not None and st.session_state.df_mapeamento is not None:
+    st.markdown("---")
+    with st.expander("🚚 Abrir Otimizador de Proximidade de RT"):
+        try:
+            df_dados_otim = st.session_state.df_dados
+            df_map_otim = st.session_state.df_mapeamento
 
-if st.session_state.df_dados is None or st.session_state.df_mapeamento is None:
-    st.warning("Carregue os arquivos de Agendamento e Mapeamento para usar o Otimizador.")
-else:
-    df_os = st.session_state.df_dados.copy()
-    df_map = st.session_state.df_mapeamento.copy()
-    
-    # Colunas padrão (adaptar conforme seus arquivos)
-    os_id_col = 'Numero_OS'
-    os_cliente_col = 'Cliente'
-    os_city_col = 'Cidade'
-    os_status_col = 'Status'
-    os_date_col = 'Data_Agendamento'
-    os_rep_col = 'RT_Agendado'
-    os_lat_col = 'Lat'
-    os_lon_col = 'Lon'
-    
-    # Filtros
-    numero_os = st.text_input("Pesquisar por Número da O.S.:")
-    cidades_disponiveis = sorted(df_os[os_city_col].dropna().unique())
-    cidade_selecionada = st.selectbox("Filtrar por Cidade:", options=["Todas"] + cidades_disponiveis)
-    clientes_disponiveis = sorted(df_os[os_cliente_col].dropna().unique())
-    cliente_selecionado = st.selectbox("Filtrar por Cliente:", options=["Todos"] + clientes_disponiveis)
-    
-    df_filtrado = df_os.copy()
-    if numero_os:
-        df_filtrado = df_filtrado[df_filtrado[os_id_col].astype(str).str.contains(str(numero_os))]
-    if cidade_selecionada != "Todas":
-        df_filtrado = df_filtrado[df_filtrado[os_city_col] == cidade_selecionada]
-    if cliente_selecionado != "Todos":
-        df_filtrado = df_filtrado[df_filtrado[os_cliente_col] == cliente_selecionado]
-    
-    st.subheader(f"Ordens encontradas: {len(df_filtrado)}")
-    
-    # Caixa de seleção expansível com cálculo de RT sugerido e distância
-    for idx, ordem in df_filtrado.iterrows():
-        with st.expander(f"OS: {ordem[os_id_col]} | Cliente: {ordem[os_cliente_col]} | Data: {ordem[os_date_col]} | Status: {ordem[os_status_col]}"):
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.write(f"RT Agendado: {ordem[os_rep_col]}")
-            with col2:
-                try:
-                    lat_os, lon_os = float(ordem[os_lat_col]), float(ordem[os_lon_col])
-                    df_map['distancia'] = df_map.apply(lambda x: haversine((lat_os, lon_os), (x['Lat'], x['Lon']), unit=Unit.KILOMETERS), axis=1)
-                    rt_sugerido = df_map.loc[df_map['distancia'].idxmin()]['RT']
-                    distancia_km = df_map['distancia'].min()
-                    st.write(f"RT Sugerido: {rt_sugerido}")
-                    st.write(f"Distância: {distancia_km:.2f} km")
-                except Exception as e:
-                    st.write("Erro ao calcular RT sugerido:", e)
-            with col3:
-                # Economia fictícia baseada em distância (exemplo)
-                if 'distancia' in df_map.columns:
-                    economia_estim = max(0, 100 - distancia_km)  # Exemplo simples
-                    st.write(f"Economia Estimada: R$ {economia_estim:.2f}")
+            # Colunas importantes
+            os_id_col = next((col for col in df_dados_otim.columns if 'número da o.s' in col.lower() or 'numeropedido' in col.lower() or 'os' in col.lower()), None)
+            os_cliente_col = next((col for col in df_dados_otim.columns if 'cliente' in col.lower() and 'id' not in col.lower()), None)
+            os_date_col = next((col for col in df_dados_otim.columns if 'data agendamento' in col.lower()), None)
+            os_city_col = next((col for col in df_dados_otim.columns if 'cidade agendamento' in col.lower() or 'cidade o.s.' in col.lower()), None)
+            os_rep_col = next((col for col in df_dados_otim.columns if 'representante técnico' in col.lower() and 'id' not in col.lower()), None)
+            if not os_rep_col:
+                os_rep_col = next((col for col in df_dados_otim.columns if 'representante' in col.lower() and 'id' not in col.lower()), None)
+            os_status_col = next((col for col in df_dados_otim.columns if 'status' in col.lower()), None)
 
-st.write("---")
-st.info("Outros módulos do app continuam funcionando normalmente, sem alterações.")
+            map_city_col = 'nm_cidade_atendimento'
+            map_lat_atendimento_col = 'cd_latitude_atendimento'
+            map_lon_atendimento_col = 'cd_longitude_atendimento'
+            map_rep_col = 'nm_representante'
+            map_rep_lat_col = 'cd_latitude_representante'
+            map_rep_lon_col = 'cd_longitude_representante'
+
+            required_cols = [os_id_col, os_cliente_col, os_date_col, os_city_col, os_rep_col, os_status_col]
+            if not all(required_cols):
+                st.warning("Para usar o otimizador, a planilha de agendamentos precisa conter colunas com os nomes corretos (incluindo Status e Representante sem ID).")
+            else:
+                # --- FILTRO DE STATUS ---
+                st.subheader("Filtro de Status")
+                all_statuses = df_dados_otim[os_status_col].dropna().unique().tolist()
+                default_selection = [s for s in ['Agendada', 'Serviços realizados', 'Parcialmente realizado'] if s in all_statuses]
+                status_selecionados = st.multiselect("Selecione os status para otimização:", options=all_statuses, default=default_selection)
+                if not status_selecionados:
+                    st.warning("Por favor, selecione ao menos um status para continuar.")
+                    st.stop()
+
+                df_otimizacao_filtrado = df_dados_otim[df_dados_otim[os_status_col].isin(status_selecionados)].copy()
+                if df_otimizacao_filtrado.empty:
+                    st.info(f"Nenhuma ordem com os status selecionados ('{', '.join(status_selecionados)}') foi encontrada.")
+                    st.stop()
+
+                # --- PESQUISA POR OS OU CLIENTE ---
+                st.subheader("Pesquisar Ordem de Serviço ou Cliente")
+                pesquisa_opcao = st.radio("Pesquisar por:", options=["Número da OS", "Cliente"], horizontal=True)
+
+                ordens_na_cidade = None
+                cidade_selecionada_otim = None
+
+                if pesquisa_opcao == "Número da OS":
+                    os_pesquisada_num = st.text_input("Digite o Número da O.S. para análise direta:")
+                    if os_pesquisada_num:
+                        df_otimizacao_filtrado[os_id_col] = df_otimizacao_filtrado[os_id_col].astype(str)
+                        resultado_busca = df_otimizacao_filtrado[df_otimizacao_filtrado[os_id_col].str.strip() == os_pesquisada_num.strip()]
+                        if not resultado_busca.empty:
+                            ordens_na_cidade = resultado_busca
+                            cidade_selecionada_otim = ordens_na_cidade.iloc[0][os_city_col]
+                            st.success(f"O.S. '{os_pesquisada_num}' encontrada! Analisando cidade: {cidade_selecionada_otim}")
+                        else:
+                            st.warning(f"O.S. '{os_pesquisada_num}' não encontrada nos status selecionados.")
+                else:  # pesquisa por cliente
+                    clientes_disponiveis = sorted(df_otimizacao_filtrado[os_cliente_col].dropna().unique())
+                    cliente_selecionado = st.selectbox("Selecione um cliente:", options=clientes_disponiveis, index=None, placeholder="Selecione um cliente...")
+                    if cliente_selecionado:
+                        ordens_na_cidade = df_otimizacao_filtrado[df_otimizacao_filtrado[os_cliente_col] == cliente_selecionado]
+                        st.success(f"{len(ordens_na_cidade)} ordens encontradas para o cliente '{cliente_selecionado}'")
+
+                # --- SELEÇÃO DE CIDADE PARA OTIMIZAÇÃO EM LOTE ---
+                if ordens_na_cidade is None:
+                    st.subheader("Ou Selecione uma Cidade para Otimizar em Lote")
+                    lista_cidades = sorted(df_otimizacao_filtrado[os_city_col].dropna().unique())
+                    cidade_selecionada_otim = st.selectbox("Selecione uma cidade:", options=lista_cidades, index=None, placeholder="Selecione...")
+                    if cidade_selecionada_otim:
+                        ordens_na_cidade = df_otimizacao_filtrado[df_otimizacao_filtrado[os_city_col] == cidade_selecionada_otim]
+
+                # --- MOSTRAR ORDENS EM EXPANDERS ---
+                if ordens_na_cidade is not None and not ordens_na_cidade.empty:
+                    st.subheader(f"Ordens Selecionadas (Status: {', '.join(status_selecionados)})")
+                    cidade_info = df_map_otim[df_map_otim[map_city_col] == cidade_selecionada_otim]
+                    if cidade_info.empty:
+                        st.error(f"Coordenadas para '{cidade_selecionada_otim}' não encontradas no Mapeamento.")
+                    else:
+                        ponto_atendimento = (cidade_info.iloc[0][map_lat_atendimento_col], cidade_info.iloc[0][map_lon_atendimento_col])
+                        distancias = [{'Representante': str(rt_map[map_rep_col]), 'Distancia (km)': haversine((rt_map[map_rep_lat_col], rt_map[map_rep_lon_col]), ponto_atendimento, unit=Unit.KILOMETERS)} for _, rt_map in df_map_otim.iterrows()]
+                        df_distancias = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
+                        termos_excluidos_otimizador = ['stellantis', 'ceabs', 'fca chrysler']
+                        mascara_otimizador = ~df_distancias['Representante'].str.contains('|'.join(termos_excluidos_otimizador), case=False, na=False)
+                        df_distancias_filtrado = df_distancias[mascara_otimizador]
+                        rt_sugerido = None
+                        if not df_distancias_filtrado.empty:
+                            rt_sugerido = df_distancias_filtrado.loc[df_distancias_filtrado['Distancia (km)'].idxmin()]
+
+                        # Expanders individuais por ordem
+                        for index, ordem in ordens_na_cidade.iterrows():
+                            with st.expander(f"OS: {ordem[os_id_col]} | Cliente: {ordem[os_cliente_col]} | RT Agendado: {ordem[os_rep_col]}"):
+                                rt_atual = ordem[os_rep_col]
+                                dist_atual_df = df_distancias[df_distancias['Representante'] == rt_atual]
+                                if not dist_atual_df.empty:
+                                    dist_atual = dist_atual_df['Distancia (km)'].values[0]
+                                else:
+                                    dist_atual = float('inf')
+                                    st.warning(f"O RT '{rt_atual}' não foi encontrado no Mapeamento.")
+
+                                st.write(f"**Distância do RT Agendado:** {dist_atual:.1f} km")
+
+                                if rt_sugerido is not None:
+                                    economia = dist_atual - rt_sugerido['Distancia (km)']
+                                    st.success(f"**Sugestão de RT mais próximo:** {rt_sugerido['Representante']}")
+                                    st.metric("Distância do RT Sugerido", f"{rt_sugerido['Distancia (km)']:.1f} km",
+                                              delta=f"{economia:.1f} km de economia" if economia > 0 and economia != float('inf') else None)
+                                else:
+                                    st.warning("Nenhum RT disponível para sugestão após a filtragem.")
+        except Exception as e:
+            st.error(f"Ocorreu um erro inesperado no Otimizador. Detalhe: {e}")
