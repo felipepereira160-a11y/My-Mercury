@@ -86,10 +86,13 @@ def executar_analise_pandas(_df_hash, pergunta, df_type):
     Sua resposta:
     """
     try:
-        response = model.generate(prompt=prompt_engenharia)
-        resposta_ia = response.text.strip().replace('`', '').replace('python', '')
+        # === Alteração principal para Gemini Pro Latest ===
+        response = model.generate_text(prompt=prompt_engenharia)
+        resposta_ia = response.result.strip().replace('`', '').replace('python', '')
+
         if resposta_ia == "PERGUNTA_INVALIDA":
             return None, "PERGUNTA_INVALIDA"
+
         resultado = eval(resposta_ia, {'df': df, 'pd': pd})
         return resultado, None
     except Exception as e:
@@ -118,7 +121,7 @@ def carregar_dataframe(arquivo, separador_padrao=','):
 with st.sidebar:
     st.header("Base de Conhecimento")
     tipos_permitidos = ["csv", "xlsx", "xls"]
-    
+
     data_file = st.sidebar.file_uploader("1. Upload de Agendamentos (OS)", type=tipos_permitidos)
     if data_file:
         try:
