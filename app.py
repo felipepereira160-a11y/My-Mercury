@@ -1,7 +1,7 @@
 # ==============================================================================
-# MERCÚRIO IA - CÓDIGO FINAL E UNIFICADO
-# Versão: 3.0
-# Modelo IA: Gemini 1.5 Flash (Nome Estável)
+# MERCÚRIO IA - CÓDIGO FINAL E UNIFICADO (GEMINI-PRO-LATEST)
+# Versão: 3.1
+# Modelo IA: Gemini Pro Latest
 # Autor: Mercurio
 # ==============================================================================
 
@@ -22,10 +22,7 @@ st.title("🧠 Mercúrio IA")
 st.write("Faça o upload de seus arquivos na barra lateral para iniciar a análise!")
 
 # --- CONFIGURAÇÃO CENTRAL DO MODELO DE IA ---
-# CORREÇÃO: Usando um nome de modelo moderno e estável.
-# Se o erro 404 persistir, troque para "gemini-pro" para máxima compatibilidade.
 GEMINI_MODEL = "gemini-pro-latest"
-# --- Lógica robusta para carregar a chave da API ---
 api_key = st.secrets.get("GOOGLE_API_KEY") or os.environ.get("GOOGLE_API_KEY")
 
 model = None
@@ -36,7 +33,8 @@ with st.sidebar:
         st.caption(f"**Modelo de IA:** `{GEMINI_MODEL}`")
         try:
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel(GEMINI_MODEL)
+            # Correção: usar ChatModel para chat interativo
+            model = genai.ChatModel(GEMINI_MODEL)
         except Exception as e:
             st.error(f"Erro ao configurar a API do Google: {e}")
             st.stop()
@@ -46,7 +44,7 @@ with st.sidebar:
 
 # --- Inicialização do Estado da Sessão ---
 if "chat" not in st.session_state and model:
-    st.session_state.chat = model.start_chat(history=[])
+    st.session_state.chat = {"history": []}  # armazenar histórico local
 if "display_history" not in st.session_state:
     st.session_state.display_history = []
 for key in ['df_dados', 'df_mapeamento', 'df_devolucao', 'df_pagamento']:
@@ -79,8 +77,8 @@ Pergunta: "{pergunta}"
 Sua resposta:
 """
     try:
-        response = model.generate_content(prompt_engenharia)
-        resposta_ia = response.text.strip()
+        response = model.generate_message(prompt_engenharia)
+        resposta_ia = response.content.strip()
         if resposta_ia == "PERGUNTA_INVALIDA": return None, "PERGUNTA_INVALIDA"
         resultado = eval(resposta_ia, {'df': df, 'pd': pd})
         return resultado, None
@@ -124,11 +122,7 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-# ==============================================================================
-# --- Corpo Principal da Aplicação (MÓDULOS RESTAURADOS) ---
-# ==============================================================================
-
-# --- Módulo 1: Dashboard de Análise de Ordens de Serviço ---
+# --- Corpo Principal (exemplo módulo 1) ---
 if st.session_state.df_dados is not None:
     st.markdown("---")
     st.header("📊 Dashboard de Análise de Ordens de Serviço")
@@ -144,13 +138,13 @@ if st.session_state.df_dados is not None:
     if status_col:
         opcoes_status = ["Exibir Todos"] + sorted(df_analise[status_col].dropna().unique())
         status_selecionado = col1.selectbox("Filtrar por Status:", opcoes_status)
-        if status_selecionado and status_selecionado != "Exibir Todos":
+        if status_selecionado != "Exibir Todos":
             df_analise = df_analise[df_analise[status_col] == status_selecionado]
 
     if motivo_fechamento_col:
         opcoes_fechamento = ["Exibir Todos"] + sorted(df_analise[motivo_fechamento_col].dropna().unique())
         fechamento_selecionado = col2.selectbox("Filtrar por Tipo de Fechamento:", opcoes_fechamento)
-        if fechamento_selecionado and fechamento_selecionado != "Exibir Todos":
+        if fechamento_selecionado != "Exibir Todos":
             df_analise = df_analise[df_analise[motivo_fechamento_col] == fechamento_selecionado]
 
     st.subheader("Análises Gráficas")
@@ -164,17 +158,7 @@ if st.session_state.df_dados is not None:
         if rep_col_dados:
             st.bar_chart(df_analise[rep_col_dados].value_counts().nlargest(10))
 
-# --- (COLE AQUI O RESTANTE DOS SEUS MÓDULOS 2, 3, 4 e 5) ---
-# Exemplo:
-# if st.session_state.df_pagamento is not None:
-#    ... seu código de duplicidade ...
-# if st.session_state.df_devolucao is not None:
-#    ... seu código de devolução ...
-
-# ==============================================================================
-# --- Módulo 6: Chat com a IA (Funcional e Unificado) ---
-# ==============================================================================
-
+# --- Módulo Chat ---
 st.markdown("---")
 st.header("💬 Converse com a IA")
 
@@ -207,23 +191,29 @@ if prompt := st.chat_input("Faça uma pergunta específica sobre os dados ou con
                     st.error(erro); response_text = "Desculpe, não consegui analisar sua pergunta nos dados."
                 else:
                     if isinstance(resultado_analise, (pd.Series, pd.DataFrame)):
-                        st.write(f"Resultado da busca na base de '{df_type}':"); st.dataframe(resultado_analise)
+                        st.write(f"Resultado da busca na base de '{df_type}':")
+                        st.dataframe(resultado_analise)
                         response_text = "A informação que você pediu está na tabela acima."
                     else:
                         response_text = f"O resultado da sua análise é: **{resultado_analise}**"
-                    st.markdown(response_text)
         
         if df_type == 'chat':
             with st.spinner("Pensando..."):
                 try:
-                    if st.session_state.chat:
-                        response = st.session_state.chat.send_message(prompt)
-                        response_text = response.text
+                    # Enviar mensagem ao chat do Gemini Pro Latest
+                    if model:
+                        response = model.chat(messages=st.session_state.chat["history"] + [{"role": "user", "content": prompt}])
+                        assistant_reply = response.last
+                        response_text = assistant_reply.content if hasattr(assistant_reply, "content") else str(assistant_reply)
                         st.markdown(response_text)
+                        # Atualiza histórico local
+                        st.session_state.chat["history"].append({"role": "user", "content": prompt})
+                        st.session_state.chat["history"].append({"role": "assistant", "content": response_text})
                     else:
                         response_text = "O serviço de chat não foi inicializado corretamente."
                         st.error(response_text)
                 except Exception as e:
-                    st.error(f"Erro ao comunicar com a IA: {e}"); response_text = "Desculpe, não consegui processar sua solicitação."
+                    st.error(f"Erro ao comunicar com a IA: {e}")
+                    response_text = "Desculpe, não consegui processar sua solicitação."
     
     st.session_state.display_history.append({"role": "assistant", "content": response_text})
