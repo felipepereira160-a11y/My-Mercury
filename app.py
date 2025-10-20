@@ -1,6 +1,6 @@
 # ==============================================================================
 # MERCÚRIO IA - CÓDIGO COMPLETO E ATUALIZADO
-# Versão: 2.3
+# Versão: 2.4
 # Modelo IA: Gemini 2.5 Flash (Configuração Centralizada)
 # Autor: Mercurio
 # ==============================================================================
@@ -35,7 +35,7 @@ with st.sidebar:
         st.caption(f"**Modelo de IA:** `{GEMINI_MODEL}`")
         try:
             genai.configure(api_key=api_key)
-            model = genai.models.get(GEMINI_MODEL)
+            model = genai.GenerativeModel(GEMINI_MODEL)
         except Exception as e:
             st.error(f"Erro ao configurar a API do Google: {e}")
             st.stop()
@@ -204,6 +204,7 @@ if prompt := st.chat_input("Faça uma pergunta específica sobre os dados ou con
 
     with st.chat_message("assistant"):
         response_text = ""
+
         if df_type in ['mapeamento', 'dados']:
             with st.spinner(f"Analisando no arquivo de '{df_type}'..."):
                 current_df = st.session_state.get(f"df_{df_type}")
@@ -224,14 +225,14 @@ if prompt := st.chat_input("Faça uma pergunta específica sobre os dados ou con
                         response_text = f"O resultado da sua análise é: **{resultado_analise}**"
                     st.markdown(response_text)
 
-        if df_type == 'chat' and st.session_state.chat is not None:
+        if df_type == 'chat':
             with st.spinner("Pensando..."):
                 try:
                     response = st.session_state.chat.send_message(prompt)
                     response_text = response.text
                     st.markdown(response_text)
                 except Exception as e:
-                    st.error(f"Ocorreu um erro ao comunicar com a IA: {e}")
+                    st.error(f"Erro ao comunicar com a IA: {e}")
                     response_text = "Desculpe, não consegui processar sua solicitação no momento."
 
-        st.session_state.display_history.append({"role": "assistant", "content": response_text})
+    st.session_state.display_history.append({"role": "assistant", "content": response_text})
