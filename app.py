@@ -489,9 +489,16 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
 # --- Seção do Chat de IA ---
 st.markdown("---")
 st.header("💬 Converse com a IA")
+
+# Exibe histórico
 for message in st.session_state.display_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+
+# Inicializa o chat do Google se ainda não existir
+if "chat" not in st.session_state:
+    from google.generativeai import Chat
+    st.session_state.chat = Chat(model="text-bison-001")
 
 if prompt := st.chat_input("Faça uma pergunta específica..."):
     st.session_state.display_history.append({"role": "user", "content": prompt})
@@ -526,10 +533,14 @@ if prompt := st.chat_input("Faça uma pergunta específica..."):
                     else:
                         response_text = f"O resultado da sua análise é: **{resultado_analise}**"
                 st.markdown(response_text)
-        else: # modo chat genérico
-            with st.spinner("Pensando..."):
-                response = st.session_state.chat.send_message(prompt)
-                response_text = response.text
-                st.markdown(response_text)
+        else:  # modo chat genérico
+            try:
+                with st.spinner("Pensando..."):
+                    response = st.session_state.chat.send_message(prompt)
+                    response_text = response.text
+                    st.markdown(response_text)
+            except Exception as e:
+                response_text = f"Erro ao gerar resposta: {e}"
+                st.error(response_text)
     
     st.session_state.display_history.append({"role": "assistant", "content": response_text})
