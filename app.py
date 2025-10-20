@@ -526,8 +526,13 @@ if prompt := st.chat_input("Faça uma pergunta específica..."):
                 st.markdown(response_text)
         else: # modo chat genérico
             with st.spinner("Pensando..."):
-                response = st.session_state.chat.send_message(prompt)
-                response_text = response.text
+                try:
+    response = st.session_state.chat.generate_message(prompt)
+    response_text = response.text
+except Exception as e:
+    st.error(f"Erro ao gerar resposta do Gemini: {e}")
+    response_text = "Desculpe, ocorreu um erro ao tentar responder."
+
                 st.markdown(response_text)
     
     st.session_state.display_history.append({"role": "assistant", "content": response_text})
