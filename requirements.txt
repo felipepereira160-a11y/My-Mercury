@@ -6,3 +6,4 @@ matplotlib
 openrouteservice
 haversine
 xlrd
+openai
