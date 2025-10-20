@@ -38,7 +38,7 @@ model = None
 if api_key:
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel("models/gemini-pro-latest")
     except Exception as e:
         st.error(f"Erro ao configurar a API do Google: {e}")
         st.stop()
@@ -51,15 +51,14 @@ if "chat" not in st.session_state and model:
     st.session_state.chat = model.start_chat(history=[])
 if "display_history" not in st.session_state:
     st.session_state.display_history = []
-if 'df_dados' not in st.session_state: # Para Agendamentos
+if 'df_dados' not in st.session_state:
     st.session_state.df_dados = None
 if 'df_mapeamento' not in st.session_state:
     st.session_state.df_mapeamento = None
 if 'df_devolucao' not in st.session_state:
     st.session_state.df_devolucao = None
-if 'df_pagamento' not in st.session_state: # Para a base de pagamento/duplicidade
+if 'df_pagamento' not in st.session_state:
     st.session_state.df_pagamento = None
-
 
 # --- Funções ---
 @st.cache_data
@@ -67,7 +66,6 @@ def convert_df_to_csv(df):
     return df.to_csv(index=False, sep=';').encode('utf-8-sig')
 
 def safe_to_numeric(series):
-    """Converte uma série para numérico de forma robusta."""
     if series.dtype == 'object':
         series = series.astype(str).str.replace('R$', '', regex=False).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip()
     return pd.to_numeric(series, errors='coerce').fillna(0)
@@ -88,7 +86,7 @@ def executar_analise_pandas(_df_hash, pergunta, df_type):
     Sua resposta:
     """
     try:
-        response = genai.GenerativeModel('gemini-pro').generate_content(prompt_engenharia)
+        response = model.generate(prompt=prompt_engenharia)
         resposta_ia = response.text.strip().replace('`', '').replace('python', '')
         if resposta_ia == "PERGUNTA_INVALIDA":
             return None, "PERGUNTA_INVALIDA"
@@ -156,10 +154,10 @@ with st.sidebar:
         except Exception as e:
             st.error(f"Erro na base de pagamento: {e}")
 
-
     if st.button("Limpar Tudo"):
         st.session_state.clear()
         st.rerun()
+
 
 # --- Corpo Principal ---
 
