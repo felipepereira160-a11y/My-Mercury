@@ -48,7 +48,7 @@ else:
 
 # --- Inicialização do Estado da Sessão ---
 if "chat" not in st.session_state and model:
-    st.session_state.chat = model.start_chat(history=[])
+   response = genai.GenerativeModel('gemini-pro').generate_content(prompt_engenharia)
 if "display_history" not in st.session_state:
     st.session_state.display_history = []
 if 'df_dados' not in st.session_state: # Para Agendamentos
