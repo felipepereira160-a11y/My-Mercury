@@ -6,15 +6,15 @@ import os
 from datetime import datetime
 from haversine import haversine, Unit
 
-# ------------------------------------------------------------
-# CONFIGURAÇÃO INICIAL
-# ------------------------------------------------------------
+# ============================================================
+# CONFIGURAÇÃO GERAL DO APP
+# ============================================================
 st.set_page_config(page_title="Mercúrio IA", page_icon="🧠", layout="wide")
 st.title("🧠 Mercúrio IA")
 st.write("Faça o upload de seus arquivos na barra lateral e converse com a IA!")
 
 # ------------------------------------------------------------
-# CHAVE DE API
+# CONFIGURAÇÃO DA CHAVE DE API
 # ------------------------------------------------------------
 api_key = st.secrets.get("GOOGLE_API_KEY") or os.environ.get("GOOGLE_API_KEY")
 api_key_status = "✔️ Carregada" if api_key else "❌ ERRO: Chave não encontrada."
@@ -25,15 +25,15 @@ if not api_key:
     st.stop()
 
 genai.configure(api_key=api_key)
-modelo_padrao = "gemini-2.5-flash"
+modelo_fixo = "gemini-2.5-flash"  # sempre o modelo mais econômico
 
 # ------------------------------------------------------------
-# ESTADO DA SESSÃO
+# ESTADOS DA SESSÃO
 # ------------------------------------------------------------
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "model" not in st.session_state:
-    st.session_state.model = genai.GenerativeModel(modelo_padrao)
+    st.session_state.model = genai.GenerativeModel(modelo_fixo)
 if "df_dados" not in st.session_state:
     st.session_state.df_dados = None
 if "df_mapeamento" not in st.session_state:
@@ -86,43 +86,48 @@ with st.sidebar:
         st.rerun()
 
 # ------------------------------------------------------------
-# DETECÇÃO DE INTENÇÃO (CHAT x DADOS)
+# DETECÇÃO DE INTENÇÃO (CHAT ou DADOS)
 # ------------------------------------------------------------
 def detectar_tipo_pergunta(texto):
     texto = texto.lower()
-    palavras_dados = ["tabela", "csv", "coluna", "quantos", "linhas", "ordem", "agendamento",
-                      "representante", "rt", "valor", "duplicidade", "proximidade", "serviço"]
+    palavras_dados = [
+        "tabela", "csv", "coluna", "quantos", "linhas", "ordem", "agendamento",
+        "representante", "rt", "valor", "duplicidade", "proximidade", "serviço",
+        "dados", "planilha", "base", "arquivo", "excel"
+    ]
     if any(p in texto for p in palavras_dados):
         return "dados"
     return "chat"
 
 # ------------------------------------------------------------
-# EXECUÇÃO DE ANÁLISE DE DADOS
+# ANÁLISE DE DADOS (modo seguro)
 # ------------------------------------------------------------
 def executar_analise(prompt, df):
     try:
         prompt_engenharia = f"""
         Você é um especialista em Python e Pandas.
-        Gere um código que responda à pergunta abaixo usando o DataFrame `df`.
-        Retorne apenas o resultado, sem explicações, em texto simples.
-        Pergunta: {prompt}
+        Gere uma resposta curta e objetiva baseada no DataFrame `df` abaixo.
         Colunas disponíveis: {', '.join(df.columns)}
+        Pergunta: {prompt}
+        Retorne apenas a resposta em texto simples, sem gerar código Python.
         """
         resposta = st.session_state.model.generate_content(prompt_engenharia)
         return resposta.text.strip()
     except Exception as e:
         return f"Erro na análise: {e}"
 
-# ------------------------------------------------------------
-# ÁREA DO CHAT
-# ------------------------------------------------------------
+# ============================================================
+# CHAT INTERATIVO MERCÚRIO IA
+# ============================================================
 st.markdown("---")
-st.header("💬 Converse com a IA")
+st.header("💬 Chat com o Assistente Mercúrio IA")
 
+# Exibir histórico do chat
 for msg in st.session_state.chat_history:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
+# Entrada do usuário
 if prompt := st.chat_input("Envie uma pergunta ou mensagem..."):
     st.session_state.chat_history.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
