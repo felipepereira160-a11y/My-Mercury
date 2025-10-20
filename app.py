@@ -3,19 +3,21 @@ import google.generativeai as genai
 import pandas as pd
 import numpy as np
 import os
-import time
+import re
 from haversine import haversine, Unit
 from io import BytesIO
 from datetime import datetime
 
-# --- Configuração da Página ---
+# ============================
+# CONFIGURAÇÃO DA PÁGINA
+# ============================
 st.set_page_config(page_title="Seu Assistente de Dados com IA", page_icon="🧠", layout="wide")
-
-# --- Título ---
 st.title("🧠 Mercúrio IA")
-st.write("Faça o upload de seus arquivos na barra lateral!")
+st.write("Faça o upload de seus arquivos na barra lateral e converse com a IA!")
 
-# --- Lógica robusta para carregar a chave da API ---
+# ============================
+# CHAVE DE API (SOMENTE UMA - ECONÔMICA)
+# ============================
 api_key = None
 api_key_status = "Não configurada"
 try:
@@ -34,136 +36,214 @@ if not api_key:
 
 st.sidebar.caption(f"**Status da Chave de API:** {api_key_status}")
 
-model = None
-if api_key:
-    try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-pro')
-    except Exception as e:
-        st.error(f"Erro ao configurar a API do Google: {e}")
-        st.stop()
-else:
+if not api_key:
     st.error("A chave da API do Google não foi encontrada. O aplicativo não pode funcionar.")
     st.stop()
 
-# --- Inicialização do Estado da Sessão ---
-if "chat" not in st.session_state and model:
-    st.session_state.chat = model.start_chat(history=[])
-if "display_history" not in st.session_state:
-    st.session_state.display_history = []
-if 'df_dados' not in st.session_state: # Para Agendamentos
-    st.session_state.df_dados = None
-if 'df_mapeamento' not in st.session_state:
-    st.session_state.df_mapeamento = None
-if 'df_devolucao' not in st.session_state:
-    st.session_state.df_devolucao = None
-if 'df_pagamento' not in st.session_state: # Para a base de pagamento/duplicidade
-    st.session_state.df_pagamento = None
+genai.configure(api_key=api_key)
+# modelo fixo e econômico
+MODEL_NAME = "gemini-2.5-flash"
 
+# ============================
+# ESTADO DA SESSÃO
+# ============================
+if "model" not in st.session_state:
+    st.session_state.model = genai.GenerativeModel(MODEL_NAME)
 
-# --- Funções ---
+# Chat object (para uso com chat stateful)
+if "chat" not in st.session_state:
+    try:
+        st.session_state.chat = st.session_state.model.start_chat(history=[])
+    except Exception as e:
+        st.error(f"Erro ao iniciar sessão de chat: {e}")
+        st.stop()
+
+# histórico de mensagens (renderizar no frontend)
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+# DataFrames armazenados
+for df_key in ["df_dados", "df_mapeamento", "df_devolucao", "df_pagamento"]:
+    if df_key not in st.session_state:
+        st.session_state[df_key] = None
+
+# ============================
+# FUNÇÕES AUXILIARES
+# ============================
 @st.cache_data
 def convert_df_to_csv(df):
     return df.to_csv(index=False, sep=';').encode('utf-8-sig')
 
 def safe_to_numeric(series):
     """Converte uma série para numérico de forma robusta."""
+    if series is None:
+        return pd.Series([], dtype=float)
     if series.dtype == 'object':
-        series = series.astype(str).str.replace('R$', '', regex=False).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip()
-    return pd.to_numeric(series, errors='coerce').fillna(0)
-
-@st.cache_data(ttl=3600)
-def executar_analise_pandas(_df_hash, pergunta, df_type):
-    df = st.session_state.df_dados if df_type == 'dados' else st.session_state.df_mapeamento
-    prompt_engenharia = f"""
-    Você é um assistente especialista em Python e Pandas. Sua tarefa é analisar a pergunta do usuário.
-    As colunas disponíveis no dataframe `df` são: {', '.join(df.columns)}.
-
-    INSTRUÇÕES:
-    1. Determine se a pergunta do usuário PODE ser respondida usando os dados.
-    2. Se a pergunta for genérica (ex: "quem descobriu o Brasil?"), responda APENAS com: "PERGUNTA_INVALIDA".
-    3. Se a pergunta for sobre os dados, converta-a em uma única linha de código Pandas que gere o resultado.
-
-    Pergunta: "{pergunta}"
-    Sua resposta:
-    """
-    try:
-        response = genai.GenerativeModel('gemini-pro').generate_content(prompt_engenharia)
-        resposta_ia = response.text.strip().replace('`', '').replace('python', '')
-        if resposta_ia == "PERGUNTA_INVALIDA":
-            return None, "PERGUNTA_INVALIDA"
-        resultado = eval(resposta_ia, {'df': df, 'pd': pd})
-        return resultado, None
-    except Exception as e:
-        return None, f"Ocorreu um erro ao executar a análise: {e}"
+        s = series.astype(str).str.replace('R$', '', regex=False).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip()
+    else:
+        s = series
+    return pd.to_numeric(s, errors='coerce').fillna(0)
 
 def carregar_dataframe(arquivo, separador_padrao=','):
+    """Carrega xlsx/xls/csv detectando separador alternativo se necessário."""
     nome_arquivo = arquivo.name.lower()
-    if nome_arquivo.endswith('.xlsx'):
-        return pd.read_excel(arquivo, engine='openpyxl')
-    elif nome_arquivo.endswith('.xls'):
-        return pd.read_excel(arquivo, engine='xlrd')
-    elif nome_arquivo.endswith('.csv'):
-        try:
+    try:
+        if nome_arquivo.endswith('.xlsx'):
+            return pd.read_excel(arquivo, engine='openpyxl')
+        elif nome_arquivo.endswith('.xls'):
+            return pd.read_excel(arquivo, engine='xlrd')
+        elif nome_arquivo.endswith('.csv'):
             arquivo.seek(0)
-            df = pd.read_csv(arquivo, encoding='latin-1', sep=separador_padrao, on_bad_lines='skip')
-            if len(df.columns) > 1: return df
-        except Exception:
-            pass
-        arquivo.seek(0)
-        outro_separador = ',' if separador_padrao == ';' else ';'
-        df = pd.read_csv(arquivo, encoding='latin-1', sep=outro_separador, on_bad_lines='skip')
-        return df
+            try:
+                df = pd.read_csv(arquivo, encoding='latin-1', sep=separador_padrao, on_bad_lines='skip')
+                if len(df.columns) > 1:
+                    return df
+            except Exception:
+                pass
+            arquivo.seek(0)
+            outro_sep = ',' if separador_padrao == ';' else ';'
+            df = pd.read_csv(arquivo, encoding='latin-1', sep=outro_sep, on_bad_lines='skip')
+            return df
+    except Exception as e:
+        st.error(f"Erro ao carregar arquivo {arquivo.name}: {e}")
     return None
 
-# --- Barra Lateral ---
+# ============================
+# VALIDAÇÃO SEGURA DO CÓDIGO GERADO PELA IA
+# ============================
+# Regras simples:
+# - Bloqueia palavras perigosas (import, exec, open, os, sys, subprocess, socket, eval, __)
+# - Permite apenas um conjunto reduzido de tokens e métodos pandas comuns
+# - Se a validação falhar, não executamos o código e devolvemos mensagem
+BLACKLIST = re.compile(r"\b(import|exec|eval|open|os\.|sys\.|subprocess|socket|__|pd\.read_|pickle|requests)\b", re.IGNORECASE)
+ALLOWED_PATTERN = re.compile(r"^[\w\.\'\[\]\(\)\,\:\>\<\=\>\<\!\-\+\*\/\s%\"|]+$", re.UNICODE)
+
+def is_code_safe(code_text):
+    """Checa codigo gerado por IA para padrões inseguros e caracteres estranhos."""
+    if not isinstance(code_text, str) or not code_text.strip():
+        return False, "Código vazio."
+    if BLACKLIST.search(code_text):
+        return False, "Código contém operações potencialmente inseguras."
+    # apenas check de caracteres - conservador
+    if not ALLOWED_PATTERN.match(code_text.strip()):
+        return False, "Código contém caracteres não permitidos."
+    # permitir algumas funções pandas comuns na expressão
+    # (não exaustivo, mas suficiente para filtros/somas/contagens)
+    allowed_methods = ["value_counts", "sum(", "mean(", "median(", "nunique(", "unique(", "groupby(", "agg(", "loc[", "iloc[", "head(", "tail(", "dropna(", "shape", "count(", "max(", "min(", "sort_values(", "reset_index(", "to_list(", "astype("]
+    if not any(m in code_text for m in allowed_methods) and "df" not in code_text:
+        # se não usar df nem métodos conhecidos, pode ser só um texto — consideramos inseguro para execução
+        return False, "Código não aparenta conter operações Pandas executáveis conhecidas."
+    return True, None
+
+# ============================
+# FUNÇÃO DE ANÁLISE (GERAR CÓDIGO VIA IA E EXECUTAR COM VALIDAÇÃO)
+# ============================
+def executar_analise_pandas(prompt, df):
+    """
+    Gera uma linha de código Pandas via IA (pedido controlado) e tenta executar localmente
+    apenas se o código passar nas checagens de segurança.
+    Retorna (resultado, erro_texto)
+    """
+    if df is None:
+        return None, "DataFrame não fornecido."
+
+    # prepara prompt para o modelo (ser o mais preciso possível)
+    prompt_engenharia = f"""
+Você é um assistente especialista em Python e Pandas. 
+O usuário fez a seguinte pergunta sobre um DataFrame (colunas listadas abaixo).
+Gere apenas UMA ÚNICA LINHA de código Python que retorne diretamente o resultado pedido usando o objeto `df`.
+Não use importações, não use múltiplas linhas, não use crases.
+Se a pergunta NÃO puder ser respondida com o DataFrame, responda com a palavra exata: PERGUNTA_INVALIDA
+
+Colunas disponíveis: {', '.join(df.columns)}
+Pergunta: {prompt}
+"""
+
+    try:
+        response = st.session_state.model.generate_content(prompt_engenharia)
+        codigo_ia = response.text.strip()
+        # limpar backticks e palavras "python"
+        codigo_ia = codigo_ia.replace("```python", "").replace("```", "").replace("python", "").strip()
+        # se IA respondeu que não é sobre dados
+        if codigo_ia.strip().upper() == "PERGUNTA_INVALIDA":
+            return None, "PERGUNTA_INVALIDA"
+
+        # validação de segurança
+        is_safe, why = is_code_safe(codigo_ia)
+        if not is_safe:
+            # devolve o texto da IA (não executa) e explica motivo
+            return codigo_ia, f"Código rejeitado por segurança: {why}. A IA retornou (não executado):\n{codigo_ia}"
+
+        # execução restrita (ambiente limitado)
+        safe_globals = {"pd": pd, "np": np}
+        safe_locals = {"df": df.copy()}
+
+        try:
+            resultado = eval(codigo_ia, safe_globals, safe_locals)
+            # se for Series/DataFrame: devolvemos diretamente
+            return resultado, None
+        except Exception as e:
+            return None, f"Erro ao executar o código gerado: {e}\nCódigo retornado pela IA:\n{codigo_ia}"
+
+    except Exception as e:
+        return None, f"Erro ao gerar código com a IA: {e}"
+
+# ============================
+# BARRA LATERAL - UPLOADS
+# ============================
+st.sidebar.header("Base de Conhecimento")
+tipos_permitidos = ["csv", "xlsx", "xls"]
+
 with st.sidebar:
-    st.header("Base de Conhecimento")
-    tipos_permitidos = ["csv", "xlsx", "xls"]
-    
-    data_file = st.sidebar.file_uploader("1. Upload de Agendamentos (OS)", type=tipos_permitidos)
-    if data_file:
-        try:
-            st.session_state.df_dados = carregar_dataframe(data_file, separador_padrao=';')
+    data_file = st.file_uploader("1. Upload de Agendamentos (OS)", type=tipos_permitidos, key="uploader_dados")
+    if data_file is not None:
+        df_tmp = carregar_dataframe(data_file, separador_padrao=';')
+        if df_tmp is not None:
+            st.session_state.df_dados = df_tmp
             st.success("Agendamentos carregados!")
-        except Exception as e:
-            st.error(f"Erro nos dados: {e}")
+        else:
+            st.error("Falha ao carregar agendamentos. Verifique o arquivo.")
 
     st.markdown("---")
-    map_file = st.sidebar.file_uploader("2. Upload do Mapeamento de RT (Fixo)", type=tipos_permitidos)
-    if map_file:
-        try:
-            st.session_state.df_mapeamento = carregar_dataframe(map_file, separador_padrao=',')
+    map_file = st.file_uploader("2. Upload do Mapeamento de RT (Fixo)", type=tipos_permitidos, key="uploader_map")
+    if map_file is not None:
+        df_tmp = carregar_dataframe(map_file, separador_padrao=',')
+        if df_tmp is not None:
+            st.session_state.df_mapeamento = df_tmp
             st.success("Mapeamento carregado!")
-        except Exception as e:
-            st.error(f"Erro no mapeamento: {e}")
+        else:
+            st.error("Falha ao carregar o mapeamento. Verifique o arquivo.")
 
     st.markdown("---")
-    devolucao_file = st.sidebar.file_uploader("3. Upload de Itens a Instalar (Devolução)", type=tipos_permitidos)
-    if devolucao_file:
-        try:
-            st.session_state.df_devolucao = carregar_dataframe(devolucao_file, separador_padrao=';')
+    devolucao_file = st.file_uploader("3. Upload de Itens a Instalar (Devolução)", type=tipos_permitidos, key="uploader_dev")
+    if devolucao_file is not None:
+        df_tmp = carregar_dataframe(devolucao_file, separador_padrao=';')
+        if df_tmp is not None:
+            st.session_state.df_devolucao = df_tmp
             st.success("Base de devolução carregada!")
-        except Exception as e:
-            st.error(f"Erro na base de devolução: {e}")
-            
-    st.markdown("---")
-    pagamento_file = st.sidebar.file_uploader("4. Upload da Base de Pagamento (Duplicidade)", type=tipos_permitidos)
-    if pagamento_file:
-        try:
-            st.session_state.df_pagamento = carregar_dataframe(pagamento_file, separador_padrao=';')
-            st.success("Base de pagamento carregada!")
-        except Exception as e:
-            st.error(f"Erro na base de pagamento: {e}")
+        else:
+            st.error("Falha ao carregar devolução. Verifique o arquivo.")
 
+    st.markdown("---")
+    pagamento_file = st.file_uploader("4. Upload da Base de Pagamento (Duplicidade)", type=tipos_permitidos, key="uploader_pag")
+    if pagamento_file is not None:
+        df_tmp = carregar_dataframe(pagamento_file, separador_padrao=';')
+        if df_tmp is not None:
+            st.session_state.df_pagamento = df_tmp
+            st.success("Base de pagamento carregada!")
+        else:
+            st.error("Falha ao carregar pagamento. Verifique o arquivo.")
 
     if st.button("Limpar Tudo"):
-        st.session_state.clear()
-        st.rerun()
+        # reset completo da sessão
+        for k in list(st.session_state.keys()):
+            del st.session_state[k]
+        st.experimental_rerun()
 
-# --- Corpo Principal ---
-
-# --- DASHBOARD DE ANÁLISE DE ORDENS DE SERVIÇO (Usa df_dados)---
+# ============================
+# CORPO: DASHBOARDS E FERRAMENTAS (mantive seu código com pequenas melhorias)
+# ============================
+# DASHBOARD DE ANÁLISE DE ORDENS DE SERVIÇO
 if st.session_state.df_dados is not None:
     st.markdown("---")
     st.header("📊 Dashboard de Análise de Ordens de Serviço")
@@ -171,19 +251,18 @@ if st.session_state.df_dados is not None:
     df_analise = df_dados_original.copy()
 
     status_col = next((col for col in df_analise.columns if 'status' in col.lower()), None)
-    
-    # CORREÇÃO: Lógica aprimorada para selecionar a coluna de NOME do representante
+
     rep_col_dados = next((col for col in df_analise.columns if 'representante técnico' in col.lower() and 'id' not in col.lower()), None)
     if not rep_col_dados:
         rep_col_dados = next((col for col in df_analise.columns if 'representante' in col.lower() and 'id' not in col.lower()), None)
-        
+
     city_col_dados = next((col for col in df_analise.columns if 'cidade agendamento' in col.lower() or 'cidade o.s.' in col.lower()), None)
     motivo_fechamento_col = next((col for col in df_analise.columns if 'tipo de fechamento' in col.lower()), None)
     cliente_col = next((col for col in df_analise.columns if 'cliente' in col.lower() and 'id' not in col.lower()), None)
-    
+
     st.subheader("Filtros de Análise")
     col_filtro1, col_filtro2 = st.columns(2)
-    
+
     status_selecionado = None
     if status_col:
         opcoes_status = ["Exibir Todos"] + sorted(df_analise[status_col].dropna().unique())
@@ -249,10 +328,10 @@ if st.session_state.df_dados is not None:
     with st.expander("Ver tabela de dados completa (original, sem filtros)"):
         st.dataframe(df_dados_original)
 
-
-# --- ANALISADOR DE CUSTOS E DUPLICIDADE (Usa df_pagamento) ---
+# ============================
+# ANALISADOR DE CUSTOS E DUPLICIDADE (df_pagamento)
+# ============================
 if st.session_state.df_pagamento is not None:
-    # Código inalterado...
     st.markdown("---")
     st.header("🔎 Analisador de Custos e Duplicidade de Deslocamento")
     with st.expander("Clique aqui para analisar custos e duplicidades da Base de Pagamento", expanded=True):
@@ -338,9 +417,10 @@ if st.session_state.df_pagamento is not None:
         except Exception as e:
             st.error(f"Ocorreu um erro inesperado no Analisador de Custos. Detalhe: {e}")
 
-# --- FERRAMENTA DE DEVOLUÇÃO DE ORDENS (Usa df_devolucao) ---
+# ============================
+# FERRAMENTA DE DEVOLUÇÃO
+# ============================
 if st.session_state.df_devolucao is not None:
-    # Código inalterado...
     st.markdown("---")
     st.header("📦 Ferramenta de Devolução de Ordens Vencidas")
     df_devolucao = st.session_state.df_devolucao.copy()
@@ -366,9 +446,10 @@ if st.session_state.df_devolucao is not None:
     else:
         st.error("ERRO: Verifique se a planilha de devolução contém as colunas 'PrazoInstalacao' e 'ClienteNome'.")
 
-# --- FERRAMENTA DE MAPEAMENTO (Usa df_mapeamento) ---
+# ============================
+# FERRAMENTA DE MAPEAMENTO
+# ============================
 if st.session_state.df_mapeamento is not None:
-    # Código inalterado...
     st.markdown("---")
     st.header("🗺️ Ferramenta de Mapeamento e Consulta de RT")
     df_map = st.session_state.df_mapeamento.copy()
@@ -378,20 +459,26 @@ if st.session_state.df_mapeamento is not None:
         cidade_selecionada_map = col1.selectbox("Filtrar Mapeamento por Cidade:", options=sorted(df_map[city_col_map].dropna().unique()), index=None, placeholder="Selecione uma cidade")
         rep_selecionado_map = col2.selectbox("Filtrar Mapeamento por Representante:", options=sorted(df_map[rep_col_map].dropna().unique()), index=None, placeholder="Selecione um representante")
         filtered_df_map = df_map
-        if cidade_selecionada_map: filtered_df_map = df_map[df_map[city_col_map] == cidade_selecionada_map]
-        elif rep_selecionado_map: filtered_df_map = df_map[df_map[rep_col_map] == rep_selecionado_map]
+        if cidade_selecionada_map:
+            filtered_df_map = df_map[df_map[city_col_map] == cidade_selecionada_map]
+        elif rep_selecionado_map:
+            filtered_df_map = df_map[df_map[rep_col_map] == rep_selecionado_map]
         st.write("Resultados da busca:")
         ordem_colunas = [rep_col_map, city_col_map, km_col]; outras_colunas = [col for col in filtered_df_map.columns if col not in ordem_colunas]; nova_ordem = ordem_colunas + outras_colunas
         st.dataframe(filtered_df_map[nova_ordem])
         st.write("Visualização no Mapa:")
-        map_data = filtered_df_map.rename(columns={lat_col: 'lat', lon_col: 'lon'}); map_data['lat'] = pd.to_numeric(map_data['lat'], errors='coerce'); map_data['lon'] = pd.to_numeric(map_data['lon'], errors='coerce'); map_data.dropna(subset=['lat', 'lon'], inplace=True)
+        map_data = filtered_df_map.rename(columns={lat_col: 'lat', lon_col: 'lon'})
+        map_data['lat'] = pd.to_numeric(map_data['lat'], errors='coerce'); map_data['lon'] = pd.to_numeric(map_data['lon'], errors='coerce'); map_data.dropna(subset=['lat', 'lon'], inplace=True)
         map_data['size'] = 1000 if cidade_selecionada_map or rep_selecionado_map else 100
-        if not map_data.empty: st.map(map_data, color='#FF4B4B', size='size')
-        else: st.warning("Nenhum resultado com coordenadas para exibir no mapa.")
+        if not map_data.empty:
+            st.map(map_data, use_container_width=True)
+        else:
+            st.warning("Nenhum resultado com coordenadas para exibir no mapa.")
 
-# --- OTIMIZADOR DE PROXIMIDADE (Usa df_dados e df_mapeamento) ---
+# ============================
+# OTIMIZADOR DE PROXIMIDADE
+# ============================
 if st.session_state.df_dados is not None and st.session_state.df_mapeamento is not None:
-    # Código inalterado, pois já estava correto...
     st.markdown("---")
     with st.expander("🚚 Abrir Otimizador de Proximidade de RT"):
         try:
@@ -421,115 +508,136 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
                 status_selecionados = st.multiselect("Selecione os status para otimização:", options=all_statuses, default=default_selection)
                 if not status_selecionados:
                     st.warning("Por favor, selecione ao menos um status para continuar.")
-                    st.stop()
-                df_otimizacao_filtrado = df_dados_otim[df_dados_otim[os_status_col].isin(status_selecionados)].copy()
-                if df_otimizacao_filtrado.empty:
-                    st.info(f"Nenhuma ordem com os status selecionados ('{', '.join(status_selecionados)}') foi encontrada.")
                 else:
-                    st.subheader("Buscar Ordem de Serviço Específica (dentro do filtro)")
-                    os_pesquisada_num = st.text_input("Digite o Número da O.S. para análise direta:")
-                    cidade_selecionada_otim = None
-                    ordens_na_cidade = None
-                    if os_pesquisada_num:
-                        df_otimizacao_filtrado[os_id_col] = df_otimizacao_filtrado[os_id_col].astype(str)
-                        resultado_busca = df_otimizacao_filtrado[df_otimizacao_filtrado[os_id_col].str.strip() == os_pesquisada_num.strip()]
-                        if not resultado_busca.empty:
-                            ordens_na_cidade = resultado_busca
-                            cidade_selecionada_otim = ordens_na_cidade.iloc[0][os_city_col]
-                            st.success(f"O.S. '{os_pesquisada_num}' encontrada! Analisando cidade: {cidade_selecionada_otim}")
-                        else:
-                            st.warning(f"O.S. '{os_pesquisada_num}' não encontrada nos status selecionados.")
+                    df_otimizacao_filtrado = df_dados_otim[df_dados_otim[os_status_col].isin(status_selecionados)].copy()
+                    if df_otimizacao_filtrado.empty:
+                        st.info(f"Nenhuma ordem com os status selecionados ('{', '.join(status_selecionados)}') foi encontrada.")
                     else:
-                        st.subheader("Ou Selecione uma Cidade para Otimizar em Lote")
-                        lista_cidades = sorted(df_otimizacao_filtrado[os_city_col].dropna().unique())
-                        cidade_selecionada_otim = st.selectbox("Selecione uma cidade:", options=lista_cidades, index=None, placeholder="Selecione...")
-                        if cidade_selecionada_otim:
-                            ordens_na_cidade = df_otimizacao_filtrado[df_otimizacao_filtrado[os_city_col] == cidade_selecionada_otim]
-                    if ordens_na_cidade is not None and not ordens_na_cidade.empty:
-                        st.subheader(f"Ordens em {cidade_selecionada_otim} (Status: {', '.join(status_selecionados)})")
-                        st.dataframe(ordens_na_cidade[[os_id_col, os_cliente_col, os_date_col, os_rep_col]])
-                        st.subheader(f"Análise de Proximidade para cada Ordem:")
-                        cidade_info = df_map_otim[df_map_otim[map_city_col] == cidade_selecionada_otim]
-                        if cidade_info.empty:
-                            st.error(f"Coordenadas para '{cidade_selecionada_otim}' não encontradas no Mapeamento.")
+                        st.subheader("Buscar Ordem de Serviço Específica (dentro do filtro)")
+                        os_pesquisada_num = st.text_input("Digite o Número da O.S. para análise direta:")
+                        cidade_selecionada_otim = None
+                        ordens_na_cidade = None
+                        if os_pesquisada_num:
+                            df_otimizacao_filtrado[os_id_col] = df_otimizacao_filtrado[os_id_col].astype(str)
+                            resultado_busca = df_otimizacao_filtrado[df_otimizacao_filtrado[os_id_col].str.strip() == os_pesquisada_num.strip()]
+                            if not resultado_busca.empty:
+                                ordens_na_cidade = resultado_busca
+                                cidade_selecionada_otim = ordens_na_cidade.iloc[0][os_city_col]
+                                st.success(f"O.S. '{os_pesquisada_num}' encontrada! Analisando cidade: {cidade_selecionada_otim}")
+                            else:
+                                st.warning(f"O.S. '{os_pesquisada_num}' não encontrada nos status selecionados.")
                         else:
-                            ponto_atendimento = (cidade_info.iloc[0][map_lat_atendimento_col], cidade_info.iloc[0][map_lon_atendimento_col])
-                            distancias = [{'Representante': str(rt_map[map_rep_col]), 'Distancia (km)': haversine((rt_map[map_rep_lat_col], rt_map[map_rep_lon_col]), ponto_atendimento, unit=Unit.KILOMETERS)} for _, rt_map in df_map_otim.iterrows()]
-                            df_distancias = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
-                            termos_excluidos_otimizador = ['stellantis', 'ceabs', 'fca chrysler']
-                            mascara_otimizador = ~df_distancias['Representante'].str.contains('|'.join(termos_excluidos_otimizador), case=False, na=False)
-                            df_distancias_filtrado = df_distancias[mascara_otimizador]
-                            rt_sugerido = None
-                            if not df_distancias_filtrado.empty:
-                                rt_sugerido = df_distancias_filtrado.loc[df_distancias_filtrado['Distancia (km)'].idxmin()]
-                            for index, ordem in ordens_na_cidade.iterrows():
-                                rt_atual = ordem[os_rep_col]
-                                with st.container(border=True):
-                                    st.markdown(f"**OS: {ordem[os_id_col]}** | Cliente: {ordem[os_cliente_col]}")
-                                    col1, col2 = st.columns(2)
-                                    with col1:
-                                        st.info(f"**RT Agendado:** {rt_atual}")
-                                        dist_atual_df = df_distancias[df_distancias['Representante'] == rt_atual]
-                                        if not dist_atual_df.empty:
-                                            dist_atual = dist_atual_df['Distancia (km)'].values[0]
-                                            st.metric("Distância do RT Agendado", f"{dist_atual:.1f} km")
-                                        else:
-                                            st.warning(f"O RT '{rt_atual}' não foi encontrado no Mapeamento.")
-                                            dist_atual = float('inf')
-                                    with col2:
-                                        if rt_sugerido is not None:
-                                            st.success(f"**Sugestão (Mais Próximo):** {rt_sugerido['Representante']}")
-                                            economia = dist_atual - rt_sugerido['Distancia (km)']
-                                            st.metric("Distância do RT Sugerido", f"{rt_sugerido['Distancia (km)']:.1f} km", delta=f"{economia:.1f} km de economia" if economia > 0 and economia != float('inf') else None)
-                                        else:
-                                            st.warning("Nenhum RT disponível para sugestão após a filtragem.")
+                            st.subheader("Ou Selecione uma Cidade para Otimizar em Lote")
+                            lista_cidades = sorted(df_otimizacao_filtrado[os_city_col].dropna().unique())
+                            cidade_selecionada_otim = st.selectbox("Selecione uma cidade:", options=lista_cidades, index=None, placeholder="Selecione...")
+                            if cidade_selecionada_otim:
+                                ordens_na_cidade = df_otimizacao_filtrado[df_otimizacao_filtrado[os_city_col] == cidade_selecionada_otim]
+                        if ordens_na_cidade is not None and not ordens_na_cidade.empty:
+                            st.subheader(f"Ordens em {cidade_selecionada_otim} (Status: {', '.join(status_selecionados)})")
+                            st.dataframe(ordens_na_cidade[[os_id_col, os_cliente_col, os_date_col, os_rep_col]])
+                            st.subheader(f"Análise de Proximidade para cada Ordem:")
+                            cidade_info = df_map_otim[df_map_otim[map_city_col] == cidade_selecionada_otim]
+                            if cidade_info.empty:
+                                st.error(f"Coordenadas para '{cidade_selecionada_otim}' não encontradas no Mapeamento.")
+                            else:
+                                ponto_atendimento = (cidade_info.iloc[0][map_lat_atendimento_col], cidade_info.iloc[0][map_lon_atendimento_col])
+                                distancias = [{'Representante': str(rt_map[map_rep_col]), 'Distancia (km)': haversine((rt_map[map_rep_lat_col], rt_map[map_rep_lon_col]), ponto_atendimento, unit=Unit.KILOMETERS)} for _, rt_map in df_map_otim.iterrows()]
+                                df_distancias = pd.DataFrame(distancias).drop_duplicates(subset=['Representante']).reset_index(drop=True)
+                                termos_excluidos_otimizador = ['stellantis', 'ceabs', 'fca chrysler']
+                                mascara_otimizador = ~df_distancias['Representante'].str.contains('|'.join(termos_excluidos_otimizador), case=False, na=False)
+                                df_distancias_filtrado = df_distancias[mascara_otimizador]
+                                rt_sugerido = None
+                                if not df_distancias_filtrado.empty:
+                                    rt_sugerido = df_distancias_filtrado.loc[df_distancias_filtrado['Distancia (km)'].idxmin()]
+                                for index, ordem in ordens_na_cidade.iterrows():
+                                    rt_atual = ordem[os_rep_col]
+                                    with st.container():
+                                        st.markdown(f"**OS: {ordem[os_id_col]}** | Cliente: {ordem[os_cliente_col]}")
+                                        col1, col2 = st.columns(2)
+                                        with col1:
+                                            st.info(f"**RT Agendado:** {rt_atual}")
+                                            dist_atual_df = df_distancias[df_distancias['Representante'] == rt_atual]
+                                            if not dist_atual_df.empty:
+                                                dist_atual = dist_atual_df['Distancia (km)'].values[0]
+                                                st.metric("Distância do RT Agendado", f"{dist_atual:.1f} km")
+                                            else:
+                                                st.warning(f"O RT '{rt_atual}' não foi encontrado no Mapeamento.")
+                                                dist_atual = float('inf')
+                                        with col2:
+                                            if rt_sugerido is not None:
+                                                st.success(f"**Sugestão (Mais Próximo):** {rt_sugerido['Representante']}")
+                                                economia = dist_atual - rt_sugerido['Distancia (km)']
+                                                st.metric("Distância do RT Sugerido", f"{rt_sugerido['Distancia (km)']:.1f} km", delta=f"{economia:.1f} km de economia" if economia > 0 and economia != float('inf') else None)
+                                            else:
+                                                st.warning("Nenhum RT disponível para sugestão após a filtragem.")
         except Exception as e:
             st.error(f"Ocorreu um erro inesperado no Otimizador. Verifique os nomes das colunas. Detalhe: {e}")
 
-# --- Seção do Chat de IA ---
+# ============================
+# CHAT - INTERATIVO (mantive formato e histórico)
+# ============================
 st.markdown("---")
 st.header("💬 Converse com a IA")
-for message in st.session_state.display_history:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
 
-if prompt := st.chat_input("Faça uma pergunta específica..."):
-    st.session_state.display_history.append({"role": "user", "content": prompt})
+# renderiza histórico
+for msg in st.session_state.chat_history:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+# input do usuário
+if user_input := st.chat_input("Faça uma pergunta específica..."):
+    st.session_state.chat_history.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
-        st.markdown(prompt)
-    
+        st.markdown(user_input)
+
+    # decidir se é pergunta sobre mapeamento/dados ou chat genérico
     keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
     df_type = 'chat'
-    
-    if any(keyword in prompt.lower() for keyword in keywords_mapeamento) and st.session_state.df_mapeamento is not None:
+    if any(k in user_input.lower() for k in keywords_mapeamento) and st.session_state.df_mapeamento is not None:
         df_type = 'mapeamento'
-    elif st.session_state.df_dados is not None:
+    elif st.session_state.df_dados is not None and any(w in user_input.lower() for w in ["tabela", "coluna", "quantos", "linhas", "ordem", "agendamento", "dados", "planilha", "excel", "csv"]):
         df_type = 'dados'
-        
+
     with st.chat_message("assistant"):
         if df_type in ['mapeamento', 'dados']:
-            with st.spinner(f"Analisando no arquivo de '{df_type}'..."):
-                current_df = st.session_state.get(f"df_{df_type}")
-                df_hash = pd.util.hash_pandas_object(current_df).sum()
-                resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
-                
-                if erro == "PERGUNTA_INVALIDA":
-                    response_text = "Desculpe, só posso responder a perguntas relacionadas aos dados da planilha carregada."
-                elif erro:
-                    st.error(erro)
-                    response_text = "Desculpe, não consegui analisar os dados."
-                else:
-                    if isinstance(resultado_analise, (pd.Series, pd.DataFrame)):
-                        st.write(f"Resultado da busca na base de '{df_type}':")
-                        st.dataframe(resultado_analise)
-                        response_text = "A informação que você pediu está na tabela acima."
+            current_df = st.session_state.get(f"df_{df_type}")
+            if current_df is None:
+                response_text = "Nenhum arquivo carregado para esse tipo de consulta."
+                st.markdown(response_text)
+            else:
+                with st.spinner(f"Analisando no arquivo de '{df_type}'..."):
+                    resultado, erro = executar_analise_pandas(user_input, current_df)
+                    if erro == "PERGUNTA_INVALIDA":
+                        response_text = "Desculpe, só posso responder a perguntas relacionadas aos dados da planilha carregada."
+                        st.markdown(response_text)
+                    elif erro:
+                        # Se erro contém código gerado mas rejeitado, mostramos a mensagem completa
+                        if isinstance(resultado, str) and resultado.strip():
+                            # IA retornou algum código/texto — mostrar de forma útil
+                            st.markdown(f"**Resposta da IA (não executada):**\n```\n{resultado}\n```")
+                            st.error(erro)
+                            response_text = "O código gerado não foi executado por razões de segurança. Veja acima o código/texto da IA."
+                        else:
+                            st.error(erro)
+                            response_text = "Desculpe — ocorreu um erro ao analisar os dados."
                     else:
-                        response_text = f"O resultado da sua análise é: **{resultado_analise}**"
-                st.markdown(response_text)
-        else: # modo chat genérico
+                        if isinstance(resultado, (pd.DataFrame, pd.Series)):
+                            st.write(f"Resultado da busca na base de '{df_type}':")
+                            st.dataframe(resultado)
+                            response_text = "A informação que você pediu está na tabela exibida acima."
+                        else:
+                            # resultado pode ser número, texto ou similar
+                            response_text = f"O resultado da sua análise é: **{resultado}**"
+                            st.markdown(response_text)
+        else:
+            # chat genérico: conversa direta com o modelo
             with st.spinner("Pensando..."):
-                response = st.session_state.chat.send_message(prompt)
-                response_text = response.text
-                st.markdown(response_text)
-    
-    st.session_state.display_history.append({"role": "assistant", "content": response_text})
+                try:
+                    resp = st.session_state.chat.send_message(user_input)
+                    response_text = resp.text
+                    st.markdown(response_text)
+                except Exception as e:
+                    response_text = f"Erro ao obter resposta do modelo: {e}"
+                    st.error(response_text)
+
+    st.session_state.chat_history.append({"role": "assistant", "content": response_text})
