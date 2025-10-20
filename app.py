@@ -3,65 +3,36 @@ import google.generativeai as genai
 import pandas as pd
 import numpy as np
 import os
-import time
 from haversine import haversine, Unit
-from io import BytesIO
 from datetime import datetime
 
 # --- Configuração da Página ---
 st.set_page_config(page_title="Seu Assistente de Dados com IA", page_icon="🧠", layout="wide")
-
-# --- Título ---
 st.title("🧠 Mercúrio IA")
 st.write("Faça o upload de seus arquivos na barra lateral!")
 
-# --- Configuração da chave API ---
-api_key = None
-api_key_status = "Não configurada"
-try:
-    api_key = st.secrets.get("GOOGLE_API_KEY")
-    if api_key:
-        api_key_status = "✔️ Carregada (Streamlit Secrets)"
-except Exception:
-    pass
-
+# --- Configuração da Chave de API ---
+api_key = st.secrets.get("GOOGLE_API_KEY") or os.environ.get("GOOGLE_API_KEY")
 if not api_key:
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    if api_key:
-        api_key_status = "✔️ Carregada (Variável de Ambiente)"
-    else:
-        api_key_status = "❌ ERRO: Chave não encontrada."
-
-st.sidebar.caption(f"**Status da Chave de API:** {api_key_status}")
-
-model = None
-if api_key:
-    try:
-        genai.configure(api_key=api_key)
-        # Usar modelo Gemini (não vamos usar generate_text direto para evitar erro)
-        model = genai.GenerativeModel("models/gemini-pro-latest")
-    except Exception as e:
-        st.error(f"Erro ao configurar a API do Google: {e}")
-        st.stop()
-else:
-    st.error("A chave da API do Google não foi encontrada. O aplicativo não pode funcionar.")
+    st.error("❌ Chave da API do Google não encontrada. O app não pode funcionar.")
     st.stop()
 
-# --- Inicialização do Estado da Sessão ---
-if "chat" not in st.session_state and model:
-    st.session_state.chat = model.start_chat(history=[])
-if "display_history" not in st.session_state:
-    st.session_state.display_history = []
-if 'df_dados' not in st.session_state:
+genai.configure(api_key=api_key)
+model = genai.ChatModel("models/gemini-pro-latest")
+
+# --- Inicialização do estado da sessão ---
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "df_dados" not in st.session_state:
     st.session_state.df_dados = None
-if 'df_mapeamento' not in st.session_state:
+if "df_mapeamento" not in st.session_state:
     st.session_state.df_mapeamento = None
-if 'df_devolucao' not in st.session_state:
+if "df_devolucao" not in st.session_state:
     st.session_state.df_devolucao = None
-if 'df_pagamento' not in st.session_state:
+if "df_pagamento" not in st.session_state:
     st.session_state.df_pagamento = None
 
-# --- Funções ---
+# --- Funções auxiliares ---
 @st.cache_data
 def convert_df_to_csv(df):
     return df.to_csv(index=False, sep=';').encode('utf-8-sig')
@@ -71,123 +42,119 @@ def safe_to_numeric(series):
         series = series.astype(str).str.replace('R$', '', regex=False).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip()
     return pd.to_numeric(series, errors='coerce').fillna(0)
 
-@st.cache_data(ttl=3600)
-def executar_analise_pandas(_df_hash, pergunta, df_type):
-    df = st.session_state.df_dados if df_type == 'dados' else st.session_state.df_mapeamento
-    prompt_engenharia = f"""
-    Você é um assistente especialista em Python e Pandas. Sua tarefa é analisar a pergunta do usuário.
-    As colunas disponíveis no dataframe `df` são: {', '.join(df.columns)}.
-
-    INSTRUÇÕES:
-    1. Determine se a pergunta do usuário PODE ser respondida usando os dados.
-    2. Se a pergunta for genérica (ex: "quem descobriu o Brasil?"), responda APENAS com: "PERGUNTA_INVALIDA".
-    3. Se a pergunta for sobre os dados, converta-a em uma única linha de código Pandas que gere o resultado.
-
-    Pergunta: "{pergunta}"
-    Sua resposta:
-    """
-    try:
-        # Para evitar o erro de generate_text, usamos start_chat + send_message
-        chat_temp = model.start_chat()
-        response = chat_temp.send_message(prompt_engenharia)
-        resposta_ia = response.text.strip().replace('`', '').replace('python', '')
-        if resposta_ia == "PERGUNTA_INVALIDA":
-            return None, "PERGUNTA_INVALIDA"
-        resultado = eval(resposta_ia, {'df': df, 'pd': pd})
-        return resultado, None
-    except Exception as e:
-        return None, f"Ocorreu um erro ao executar a análise: {e}"
-
 def carregar_dataframe(arquivo, separador_padrao=','):
     nome_arquivo = arquivo.name.lower()
-    if nome_arquivo.endswith('.xlsx'):
-        return pd.read_excel(arquivo, engine='openpyxl')
-    elif nome_arquivo.endswith('.xls'):
-        return pd.read_excel(arquivo, engine='xlrd')
+    if nome_arquivo.endswith(('.xlsx', '.xls')):
+        return pd.read_excel(arquivo, engine='openpyxl' if nome_arquivo.endswith('xlsx') else 'xlrd')
     elif nome_arquivo.endswith('.csv'):
         try:
             arquivo.seek(0)
             df = pd.read_csv(arquivo, encoding='latin-1', sep=separador_padrao, on_bad_lines='skip')
             if len(df.columns) > 1: return df
-        except Exception:
+        except:
             pass
         arquivo.seek(0)
-        outro_separador = ',' if separador_padrao == ';' else ';'
-        df = pd.read_csv(arquivo, encoding='latin-1', sep=outro_separador, on_bad_lines='skip')
+        outro_sep = ',' if separador_padrao == ';' else ';'
+        df = pd.read_csv(arquivo, encoding='latin-1', sep=outro_sep, on_bad_lines='skip')
         return df
     return None
 
-# --- Barra Lateral ---
+# --- Barra lateral para upload ---
 with st.sidebar:
     st.header("Base de Conhecimento")
     tipos_permitidos = ["csv", "xlsx", "xls"]
     
     data_file = st.file_uploader("1. Upload de Agendamentos (OS)", type=tipos_permitidos)
     if data_file:
-        try:
-            st.session_state.df_dados = carregar_dataframe(data_file, separador_padrao=';')
-            st.success("Agendamentos carregados!")
-        except Exception as e:
-            st.error(f"Erro nos dados: {e}")
+        st.session_state.df_dados = carregar_dataframe(data_file, separador_padrao=';')
+        st.success("Agendamentos carregados!")
 
-    st.markdown("---")
     map_file = st.file_uploader("2. Upload do Mapeamento de RT (Fixo)", type=tipos_permitidos)
     if map_file:
-        try:
-            st.session_state.df_mapeamento = carregar_dataframe(map_file, separador_padrao=',')
-            st.success("Mapeamento carregado!")
-        except Exception as e:
-            st.error(f"Erro no mapeamento: {e}")
+        st.session_state.df_mapeamento = carregar_dataframe(map_file, separador_padrao=',')
+        st.success("Mapeamento carregado!")
 
-    st.markdown("---")
     devolucao_file = st.file_uploader("3. Upload de Itens a Instalar (Devolução)", type=tipos_permitidos)
     if devolucao_file:
-        try:
-            st.session_state.df_devolucao = carregar_dataframe(devolucao_file, separador_padrao=';')
-            st.success("Base de devolução carregada!")
-        except Exception as e:
-            st.error(f"Erro na base de devolução: {e}")
-            
-    st.markdown("---")
+        st.session_state.df_devolucao = carregar_dataframe(devolucao_file, separador_padrao=';')
+        st.success("Base de devolução carregada!")
+
     pagamento_file = st.file_uploader("4. Upload da Base de Pagamento (Duplicidade)", type=tipos_permitidos)
     if pagamento_file:
-        try:
-            st.session_state.df_pagamento = carregar_dataframe(pagamento_file, separador_padrao=';')
-            st.success("Base de pagamento carregada!")
-        except Exception as e:
-            st.error(f"Erro na base de pagamento: {e}")
+        st.session_state.df_pagamento = carregar_dataframe(pagamento_file, separador_padrao=';')
+        st.success("Base de pagamento carregada!")
 
     if st.button("Limpar Tudo"):
         st.session_state.clear()
-        st.rerun()
+        st.experimental_rerun()
 
-# --- Aqui você mantém todo o código original dos dashboards, análises, devolução, mapeamento, otimização, etc. ---
-# (Sem alteração, copia seu código completo da pergunta original)
-# ...
-
-# --- SEÇÃO DO CHAT DE AJUDA COM IA (BAIXO CUSTO / GRATUITO) ---
-st.markdown("---")
-st.header("💬 Chat de Ajuda (Sem custos de tickets)")
-
-# Inicializa histórico do chat
-if "chat_ajuda_history" not in st.session_state:
-    st.session_state.chat_ajuda_history = []
-
-# Entrada do usuário
-user_input = st.text_input("Faça sua pergunta para a IA de ajuda:")
-
-if st.button("Enviar Pergunta") and user_input:
-    # Resposta simulada para baixo custo
-    resposta = f"Pergunta recebida: '{user_input}'. Sugestão: tente verificar os filtros, colunas ou arquivos carregados, ou consulte a documentação do dashboard."
+# --- DASHBOARD ORDENS DE SERVIÇO ---
+if st.session_state.df_dados is not None:
+    st.markdown("---")
+    st.header("📊 Dashboard de Ordens de Serviço")
+    df_analise = st.session_state.df_dados.copy()
     
-    # Armazena no histórico
-    st.session_state.chat_ajuda_history.append(("Você", user_input))
-    st.session_state.chat_ajuda_history.append(("IA", resposta))
-    user_input = ""  # Limpa input
+    status_col = next((c for c in df_analise.columns if 'status' in c.lower()), None)
+    city_col = next((c for c in df_analise.columns if 'cidade' in c.lower()), None)
+    rep_col = next((c for c in df_analise.columns if 'representante' in c.lower() and 'id' not in c.lower()), None)
+    
+    # Filtros
+    col1, col2 = st.columns(2)
+    status_selec = col1.selectbox("Filtrar por Status:", options=["Exibir Todos"] + sorted(df_analise[status_col].dropna().unique()) if status_col else [])
+    cidade_selec = col2.selectbox("Filtrar por Cidade:", options=["Exibir Todos"] + sorted(df_analise[city_col].dropna().unique()) if city_col else [])
+    
+    if status_selec != "Exibir Todos" and status_col: df_analise = df_analise[df_analise[status_col] == status_selec]
+    if cidade_selec != "Exibir Todos" and city_col: df_analise = df_analise[df_analise[city_col] == cidade_selec]
+    
+    st.subheader("Top 10 Ordens por Cidade")
+    if city_col: st.bar_chart(df_analise[city_col].value_counts().nlargest(10))
+    
+    st.subheader("Top 10 Ordens por Representante")
+    if rep_col: st.bar_chart(df_analise[rep_col].value_counts().nlargest(10))
+    
+    with st.expander("Ver tabela completa"):
+        st.dataframe(st.session_state.df_dados)
 
-# Mostra o histórico de conversa
-for quem, msg in st.session_state.chat_ajuda_history:
-    if quem == "Você":
-        st.markdown(f"**{quem}:** {msg}")
-    else:
-        st.markdown(f"**{quem}:** {msg}")
+# --- CHAT DE IA (considerando dados carregados) ---
+st.markdown("---")
+st.header("💬 Pergunte à IA sobre os dados")
+
+for msg in st.session_state.chat_history:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+if prompt := st.chat_input("Faça uma pergunta sobre os relatórios ou geral..."):
+    st.session_state.chat_history.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    
+    with st.chat_message("assistant"):
+        try:
+            # Se houver dados, tenta analisar primeiro
+            if st.session_state.df_dados is not None:
+                df = st.session_state.df_dados.copy()
+                prompt_df = f"""
+                Você é um assistente especialista em Python e Pandas.
+                As colunas disponíveis no dataframe `df` são: {', '.join(df.columns)}.
+                Pergunta do usuário: "{prompt}"
+                Gere o resultado usando apenas pandas.
+                """
+                response = model.chat(messages=[{"role":"user","content":prompt_df}])
+                text_resp = response.last.message.get("content", "").strip()
+                # Se for algo que gera tabela ou número, tenta executar
+                try:
+                    resultado = eval(text_resp, {"df": df, "pd": pd, "np": np})
+                    if isinstance(resultado, (pd.DataFrame, pd.Series)):
+                        st.dataframe(resultado)
+                        text_resp = "✅ Resultado exibido acima."
+                except:
+                    pass
+            else:
+                # Chat genérico
+                response = model.chat(messages=[{"role":"user","content":prompt}])
+                text_resp = response.last.message.get("content", "").strip()
+        except Exception as e:
+            text_resp = f"❌ Erro ao processar a pergunta: {e}"
+        
+        st.markdown(text_resp)
+        st.session_state.chat_history.append({"role": "assistant", "content": text_resp})
