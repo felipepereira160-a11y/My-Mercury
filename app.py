@@ -557,51 +557,31 @@ if prompt := st.chat_input("Envie uma pergunta ou mensagem..."):
     with st.chat_message("assistant"):
         with st.spinner("Pensando..."):
             # --- Perguntas sobre dados ---
-            if tipo == "dados":
-                df = st.session_state.df_dados or st.session_state.df_mapeamento
-                if df is not None:
-                    current_df = df
-                    df_hash = pd.util.hash_pandas_object(current_df).sum()
-                    df_type = 'mapeamento' if current_df is st.session_state.df_mapeamento else 'dados'
-                    resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
+            # --- Perguntas sobre dados ---
+if tipo == "dados":
+    if st.session_state.df_dados is not None:
+        df = st.session_state.df_dados
+    elif st.session_state.df_mapeamento is not None:
+        df = st.session_state.df_mapeamento
+    else:
+        df = None
 
-                    if erro == "PERGUNTA_INVALIDA":
-                        resposta_final = "Desculpe, só posso responder a perguntas relacionadas aos dados da planilha carregada."
-                    elif erro:
-                        resposta_final = f"Erro na análise de dados: {erro}"
-                    else:
-                        if isinstance(resultado_analise, (pd.Series, pd.DataFrame)):
-                            st.write(f"Resultado da busca na base de '{df_type}':")
-                            st.dataframe(resultado_analise)
-                            resposta_final = "A informação que você pediu está na tabela acima."
-                        else:
-                            resposta_final = f"O resultado da sua análise é: **{resultado_analise}**"
-                else:
-                    resposta_final = "Nenhum arquivo foi carregado ainda para análise de dados."
+    if df is not None:
+        current_df = df
+        df_hash = pd.util.hash_pandas_object(current_df).sum()
+        df_type = 'mapeamento' if current_df is st.session_state.df_mapeamento else 'dados'
+        resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
 
-            # --- Chat genérico como Mercúrio ---
+        if erro == "PERGUNTA_INVALIDA":
+            resposta_final = "Desculpe, só posso responder a perguntas relacionadas aos dados da planilha carregada."
+        elif erro:
+            resposta_final = f"Erro na análise de dados: {erro}"
+        else:
+            if isinstance(resultado_analise, (pd.Series, pd.DataFrame)):
+                st.write(f"Resultado da busca na base de '{df_type}':")
+                st.dataframe(resultado_analise)
+                resposta_final = "A informação que você pediu está na tabela acima."
             else:
-                try:
-                    # Perguntas sobre o criador
-                    palavras_chave_criador = ["quem criou", "quem é o criador", "quem desenvolveu", "quem fez você"]
-                    if any(p in prompt.lower() for p in palavras_chave_criador):
-                        resposta_final = "Fui criado por Felipe Castro 🧠"
-                    else:
-                        # Prompt para Mercúrio
-                        prompt_mercurio = f"""
-                        Você é Mercúrio, um assistente perspicaz e direto.
-                        Sempre responda como Mercúrio e não quebre o personagem.
-                        Pergunta do usuário: "{prompt}"
-                        """
-                        resposta = st.session_state.model.generate_content(prompt_mercurio)
-                        resposta_final = resposta.text.strip()
-                        if not resposta_final:
-                            resposta_final = "Hmm... não tenho certeza sobre isso, mas posso investigar!"
-                except Exception as e:
-                    resposta_final = f"Erro ao chamar o modelo de chat: {e}"
-
-            st.markdown(resposta_final)
-
-    # salva resposta nos históricos
-    st.session_state.display_history.append({"role": "assistant", "content": resposta_final})
-    st.session_state.chat_history.append({"role": "assistant", "content": resposta_final})
+                resposta_final = f"O resultado da sua análise é: **{resultado_analise}**"
+    else:
+        resposta_final = "Nenhum arquivo foi carregado ainda para análise de dados."
