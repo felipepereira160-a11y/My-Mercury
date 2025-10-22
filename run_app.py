@@ -289,24 +289,75 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
         except Exception as e:
             st.error(f"Ocorreu um erro inesperado no Otimizador. Detalhe: {e}")
 
-# --- Seção do Chat de IA ---
+# --- SEÇÃO DO CHAT DE IA (Mercúrio) ---
 st.markdown("---")
-st.header("💬 Converse com a IA para análises personalizadas")
+st.header("💬 Converse com a IA (Mercúrio)")
+
+# Definindo a personalidade Mercúrio
+system_prompt = """
+Você é Mercúrio, um assistente virtual brasileiro, inteligente, amigável e prestativo.
+Fale sempre de forma clara, leve e motivadora, com exemplos práticos quando possível.
+Responda perguntas sobre dados usando pandas, Excel, análises financeiras e otimização logística.
+Nunca diga que é um modelo de linguagem genérico. Mantenha a personalidade de Mercúrio.
+"""
+
+# Exibe histórico do chat
 for message in st.session_state.display_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("Faça uma pergunta específica..."):
+# Entrada do chat
+if prompt := st.chat_input("Envie uma pergunta ou mensagem..."):
+    # Adiciona prompt do usuário ao histórico
     st.session_state.display_history.append({"role": "user", "content": prompt})
+    st.session_state.chat_history.append({"role": "user", "content": prompt})
+
     with st.chat_message("user"):
         st.markdown(prompt)
-    keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
-    df_type = 'chat'
-    if any(keyword in prompt.lower() for keyword in keywords_mapeamento) and st.session_state.df_mapeamento is not None:
-        df_type = 'mapeamento'
-    elif st.session_state.df_dados is not None:
-        df_type = 'dados'
+
+    # --- DETECÇÃO DE PERGUNTA SOBRE O DESENVOLVEDOR ---
+    prompt_lower = prompt.lower()
+    if any(p in prompt_lower for p in ["quem criou você", "quem te desenvolveu", "quem te fez", "quem é seu criador"]):
+        resposta_final = "Fui desenvolvido pelo Felipe Castro.🚀"
+    else:
+        tipo = detectar_tipo_pergunta(prompt)
+        # --- Perguntas relacionadas a dados ---
+        if tipo == "dados":
+            df = st.session_state.df_dados if st.session_state.df_dados is not None else st.session_state.df_mapeamento
+            if df is not None:
+                df_hash = pd.util.hash_pandas_object(df).sum()
+                df_type = 'mapeamento' if df is st.session_state.df_mapeamento else 'dados'
+                resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
+
+                if erro == "PERGUNTA_INVALIDA":
+                    resposta_final = "Desculpe, só posso responder a perguntas relacionadas aos dados carregados."
+                elif erro:
+                    resposta_final = f"Ocorreu um erro na análise: {erro}"
+                else:
+                    # formata o resultado para apresentação
+                    if isinstance(resultado_analise, pd.DataFrame):
+                        st.session_state.display_history.append({"role": "assistant", "content": "Segue o resultado da análise em tabela abaixo."})
+                        with st.chat_message("assistant"):
+                            st.dataframe(resultado_analise)
+                        resposta_final = "Tabela exibida acima."
+                    else:
+                        resposta_final = str(resultado_analise)
+            else:
+                resposta_final = "Nenhuma base de dados carregada para análise. Faça upload de uma planilha na barra lateral."
+        else:
+            # --- Perguntas gerais enviadas ao Gemini com personalidade Mercúrio ---
+            try:
+                response = st.session_state.model.generate_content(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                resposta_final = response.text.strip()
+            except Exception as e:
+                resposta_final = f"Erro ao gerar resposta: {e}"
+
+    # Adiciona resposta da IA ao histórico e exibe
+    st.session_state.display_history.append({"role": "assistant", "content": resposta_final})
     with st.chat_message("assistant"):
-        if df_type in ['mapeamento', 'dados']:
-            with st.spinner(f"Analisando no arquivo de '{df_type}'..."):
-               
+        st.markdown(resposta_final)
