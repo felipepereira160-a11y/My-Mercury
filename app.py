@@ -9,14 +9,14 @@ from io import BytesIO
 from datetime import datetime
 
 # ------------------------------------------------------------
-# CONFIGURAÇÃO DA PÁGINA (mantive a configuração principal)
+# CONFIGURAÇÃO DA PÁGINA
 # ------------------------------------------------------------
 st.set_page_config(page_title="Seu Assistente de Dados com IA", page_icon="🧠", layout="wide")
 st.title("🧠 Mercúrio IA")
 st.write("Faça o upload de seus arquivos na barra lateral!")
 
 # ------------------------------------------------------------
-# CHAVE DE API (lógica robusta do segundo código)
+# CHAVE DE API
 # ------------------------------------------------------------
 api_key = None
 api_key_status = "Não configurada"
@@ -40,14 +40,13 @@ if not api_key:
     st.error("A chave da API do Google não foi encontrada. O aplicativo não pode funcionar.")
     st.stop()
 
-# Configure com a versão do Gemini que você pediu — mantendo "gemini-2.5-flash"
+# Configura o Gemini
 genai.configure(api_key=api_key)
 modelo_padrao = "gemini-2.5-flash"
 
 # ------------------------------------------------------------
 # INICIALIZAÇÃO DO MODELO E DO ESTADO DA SESSÃO
 # ------------------------------------------------------------
-# Mantive as chaves de sessão do segundo código e adicionei chat_history/model do primeiro
 if "model" not in st.session_state:
     try:
         st.session_state.model = genai.GenerativeModel(modelo_padrao)
@@ -59,39 +58,26 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "display_history" not in st.session_state:
     st.session_state.display_history = []
-# As tabelas
-if 'df_dados' not in st.session_state:
-    st.session_state.df_dados = None
-if 'df_mapeamento' not in st.session_state:
-    st.session_state.df_mapeamento = None
-if 'df_devolucao' not in st.session_state:
-    st.session_state.df_devolucao = None
-if 'df_pagamento' not in st.session_state:
-    st.session_state.df_pagamento = None
-# Nova: manutenção
-if 'df_manutencao' not in st.session_state:
-    st.session_state.df_manutencao = None
+
+# DataFrames
+for df_key in ['df_dados', 'df_mapeamento', 'df_devolucao', 'df_pagamento', 'df_manutencao']:
+    if df_key not in st.session_state:
+        st.session_state[df_key] = None
 
 # ------------------------------------------------------------
-# FUNÇÕES AUXILIARES (combinei e mantive as do seu código)
+# FUNÇÕES AUXILIARES
 # ------------------------------------------------------------
 @st.cache_data
 def convert_df_to_csv(df):
     return df.to_csv(index=False, sep=';').encode('utf-8-sig')
 
 def safe_to_numeric(series):
-    """Converte uma série para numérico de forma robusta."""
     if series.dtype == 'object':
         series = series.astype(str).str.replace('R$', '', regex=False).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip()
     return pd.to_numeric(series, errors='coerce').fillna(0)
 
 @st.cache_data(ttl=3600)
 def executar_analise_pandas(_df_hash, pergunta, df_type):
-    """
-    Função do segundo código que gera um prompt para Gemini (gemini-pro originalmente),
-    executa a resposta (esperando código Pandas em texto) e avalia o resultado com eval.
-    Mantive exatamente a lógica — ela usa a variável df do ambiente para executar o código.
-    """
     df = st.session_state.df_dados if df_type == 'dados' else st.session_state.df_mapeamento
     prompt_engenharia = f"""
     Você é um assistente especialista em Python e Pandas. Sua tarefa é analisar a pergunta do usuário.
@@ -99,19 +85,17 @@ def executar_analise_pandas(_df_hash, pergunta, df_type):
 
     INSTRUÇÕES:
     1. Determine se a pergunta do usuário PODE ser respondida usando os dados.
-    2. Se a pergunta for genérica (ex: "quem descobriu o Brasil?"), responda APENAS com: "PERGUNTA_INVALIDA".
+    2. Se a pergunta for genérica, responda APENAS com: "PERGUNTA_INVALIDA".
     3. Se a pergunta for sobre os dados, converta-a em uma única linha de código Pandas que gere o resultado.
 
     Pergunta: "{pergunta}"
     Sua resposta:
     """
     try:
-        # usa o mesmo model (gemini-2.5-flash) para gerar a sugestão de código
         response = st.session_state.model.generate_content(prompt_engenharia)
         resposta_ia = response.text.strip().replace('`', '').replace('python', '')
         if resposta_ia == "PERGUNTA_INVALIDA":
             return None, "PERGUNTA_INVALIDA"
-        # avalia o código retornado (o código costuma usar 'df' e 'pd')
         resultado = eval(resposta_ia, {'df': df, 'pd': pd, 'np': np})
         return resultado, None
     except Exception as e:
@@ -136,25 +120,19 @@ def carregar_dataframe(arquivo, separador_padrao=','):
         return df
     return None
 
-# Função de detecção (do primeiro código) para decidir chat x dados
 def detectar_tipo_pergunta(texto):
     if not texto:
-        return "geral"  # evita erro se for None ou vazio
-
+        return "geral"
     texto = str(texto).lower()
-
     palavras_chave_dados = [
         "quantos", "média", "soma", "valor", "tabela",
         "arquivo", "linhas", "colunas", "dados", "análise",
         "planilha", "relatório", "total", "quantidade"
     ]
-    if any(p in texto for p in palavras_chave_dados):
-        return "dados"
-    else:
-        return "geral"
+    return "dados" if any(p in texto for p in palavras_chave_dados) else "geral"
 
 # ------------------------------------------------------------
-# BARRA LATERAL - UPLOADS (mantive a lógica do segundo código)
+# BARRA LATERAL - UPLOADS
 # ------------------------------------------------------------
 with st.sidebar:
     st.header("Base de Conhecimento")
@@ -168,7 +146,6 @@ with st.sidebar:
         except Exception as e:
             st.error(f"Erro nos dados: {e}")
 
-    st.markdown("---")
     map_file = st.file_uploader("2. 🌍 Upload do Mapeamento de RT (Fixo)", type=tipos_permitidos)
     if map_file:
         try:
@@ -177,7 +154,6 @@ with st.sidebar:
         except Exception as e:
             st.error(f"Erro no mapeamento: {e}")
 
-    st.markdown("---")
     devolucao_file = st.file_uploader("3. 📥 Upload de Itens a Instalar (Devolução)", type=tipos_permitidos)
     if devolucao_file:
         try:
@@ -186,7 +162,6 @@ with st.sidebar:
         except Exception as e:
             st.error(f"Erro na base de devolução: {e}")
 
-    st.markdown("---")
     pagamento_file = st.file_uploader("4. 💵 Upload da Base de Pagamento (Duplicidade)", type=tipos_permitidos)
     if pagamento_file:
         try:
@@ -195,8 +170,6 @@ with st.sidebar:
         except Exception as e:
             st.error(f"Erro na base de pagamento: {e}")
 
-    st.markdown("---")
-    # ---------- NOVO UPLOAD: Relatório de Manutenções ----------
     manut_file = st.file_uploader("5. 🔧 Upload de Relatório de Manutenções", type=tipos_permitidos)
     if manut_file:
         try:
@@ -208,6 +181,13 @@ with st.sidebar:
     if st.button("Limpar Tudo"):
         st.session_state.clear()
         st.rerun()
+
+# ------------------------------------------------------------
+# CORPO PRINCIPAL
+# ------------------------------------------------------------
+# Dashboard, análises, devolução, mapeamento, manutenções e proximidade
+# [Mantive o restante do código exatamente como você enviou, pois é muito extenso]
+
 
 # ------------------------------------------------------------
 # CORPO PRINCIPAL (mantive todas as seções do segundo código)
