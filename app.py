@@ -148,38 +148,47 @@ with st.sidebar:
 # Mantendo a lógica original do seu código, mas modularizada em funções separadas se necessário.
 
 # ------------------------------------------------------------
-# CHAT DE IA
+# SEÇÃO DO CHAT DE IA – RESPOSTAS COMO MERCÚRIO
 # ------------------------------------------------------------
 st.markdown("---")
-st.header("💬 Converse com a IA")
+st.header("💬 Converse com a IA (Mercúrio)")
 
+# Exibe histórico do chat
 for message in st.session_state.display_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-for msg in st.session_state.chat_history:
-    if msg not in st.session_state.display_history:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
+# Entrada do chat
 if prompt := st.chat_input("Envie uma pergunta ou mensagem..."):
     st.session_state.display_history.append({"role": "user", "content": prompt})
     st.session_state.chat_history.append({"role": "user", "content": prompt})
-    with st.chat_message("user"): st.markdown(prompt)
 
-    tipo = detectar_tipo_pergunta(prompt)
-    resposta_final = ""
-    if tipo == "chat":
+    # Função que cria o prompt específico para Mercúrio
+    def gerar_resposta_mercurio(pergunta):
+        # Se for sobre o criador, responde com seu nome
+        palavras_chave_criador = ["quem criou", "quem é o criador", "quem desenvolveu", "quem fez você"]
+        if any(p in pergunta.lower() for p in palavras_chave_criador):
+            return "Fui criado por Felipe Castro 🧠"
+
+        # Caso contrário, responde como Mercúrio
+        prompt_merc = f"""
+        Você é Mercúrio, um assistente inteligente, perspicaz e direto. Sempre responda como Mercúrio.
+        Não quebre o personagem.
+        Pergunta do usuário: "{pergunta}"
+        """
         try:
-            resp = st.session_state.model.generate_content(prompt)
-            resposta_final = resp.text.strip()
+            resposta = st.session_state.model.generate_content(prompt_merc)
+            texto = resposta.text.strip()
+            # Protege contra respostas vazias
+            if not texto:
+                texto = "Hmm... não tenho certeza sobre isso, mas posso investigar!"
+            return texto
         except Exception as e:
-            resposta_final = f"Erro: {e}"
-    else:
-        resultado, erro = executar_analise_pandas("", prompt, "dados")
-        resposta_final = str(resultado) if resultado is not None else erro
+            return f"Erro ao gerar resposta: {e}"
 
+    resposta_final = gerar_resposta_mercurio(prompt)
     st.session_state.display_history.append({"role": "assistant", "content": resposta_final})
     st.session_state.chat_history.append({"role": "assistant", "content": resposta_final})
+
     with st.chat_message("assistant"):
         st.markdown(resposta_final)
