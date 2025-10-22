@@ -519,9 +519,7 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
         except Exception as e:
             st.error(f"Ocorreu um erro inesperado no Otimizador. Verifique os nomes das colunas. Detalhe: {e}")
 
-# ------------------------------------------------------------
-# SEÇÃO DO CHAT DE IA (Mercúrio) – unificação com análise de dados
-# ------------------------------------------------------------
+# --- SEÇÃO DO CHAT DE IA (Mercúrio) – unificação com análise de dados ---
 st.markdown("---")
 st.header("💬 Converse com a IA (Mercúrio)")
 
@@ -530,28 +528,22 @@ for message in st.session_state.display_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Mostra também (se houver) o chat_history extra
-for msg in st.session_state.chat_history:
-    if msg not in st.session_state.display_history:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
 # Entrada do chat
 if prompt := st.chat_input("Envie uma pergunta ou mensagem..."):
-    # salva em ambos históricos
     st.session_state.display_history.append({"role": "user", "content": prompt})
     st.session_state.chat_history.append({"role": "user", "content": prompt})
 
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    tipo = detectar_tipo_pergunta(prompt)
-    resposta_final = ""
-tipo = detectar_tipo_pergunta(prompt)
-with st.chat_message("assistant"):
-    with st.spinner("Pensando..."):
-        # --- Perguntas sobre dados ---
+    # --- DETECÇÃO DE PERGUNTA SOBRE O DESENVOLVEDOR ---
+    prompt_lower = prompt.lower()
+    if any(p in prompt_lower for p in ["quem criou você", "quem te desenvolveu", "quem te fez", "quem é seu criador"]):
+        resposta_final = "Fui desenvolvido pelo Felipe Castro."
+    else:
+        tipo = detectar_tipo_pergunta(prompt)
         if tipo == "dados":
+            # ... aqui entra sua lógica existente de análise de dados
             if st.session_state.df_dados is not None:
                 df = st.session_state.df_dados
             elif st.session_state.df_mapeamento is not None:
@@ -560,42 +552,23 @@ with st.chat_message("assistant"):
                 df = None
 
             if df is not None:
-                current_df = df
-                df_hash = pd.util.hash_pandas_object(current_df).sum()
-                df_type = 'mapeamento' if current_df is st.session_state.df_mapeamento else 'dados'
+                df_hash = pd.util.hash_pandas_object(df).sum()
+                df_type = 'mapeamento' if df is st.session_state.df_mapeamento else 'dados'
                 resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
 
                 if erro == "PERGUNTA_INVALIDA":
-                    resposta_final = "Desculpe, só posso responder a perguntas relacionadas aos dados da planilha carregada."
+                    resposta_final = "Desculpe, só posso responder a perguntas relacionadas aos dados carregados."
                 elif erro:
-                    resposta_final = f"Erro na análise de dados: {erro}"
+                    resposta_final = f"Ocorreu um erro na análise: {erro}"
                 else:
-                    if isinstance(resultado_analise, (pd.Series, pd.DataFrame)):
-                        st.write(f"Resultado da busca na base de '{df_type}':")
-                        st.dataframe(resultado_analise)
-                        resposta_final = "A informação que você pediu está na tabela acima."
-                    else:
-                        resposta_final = f"O resultado da sua análise é: **{resultado_analise}**"
-            else:
-                resposta_final = "Nenhum arquivo foi carregado ainda para análise de dados."
-
-        # --- Chat genérico como Mercúrio ---
+                    resposta_final = str(resultado_analise)
         else:
+            # --- Para perguntas gerais, pode enviar ao Gemini ---
             try:
-                palavras_chave_criador = ["quem criou", "quem é o criador", "quem desenvolveu", "quem fez você"]
-                if any(p in prompt.lower() for p in palavras_chave_criador):
-                    resposta_final = "Fui criado por Felipe Castro 🧠"
-                else:
-                    prompt_mercurio = f"""
-                    Você é Mercúrio, um assistente perspicaz e direto.
-                    Sempre responda como Mercúrio e não quebre o personagem.
-                    Pergunta do usuário: "{prompt}"
-                    """
-                    resposta = st.session_state.model.generate_content(prompt_mercurio)
-                    resposta_final = resposta.text.strip()
-                    if not resposta_final:
-                        resposta_final = "Hmm... não tenho certeza sobre isso, mas posso investigar!"
+                response = st.session_state.model.generate_content(prompt)
+                resposta_final = response.text.strip()
             except Exception as e:
-                resposta_final = f"Erro ao chamar o modelo de chat: {e}"
+                resposta_final = f"Erro ao gerar resposta: {e}"
 
+    with st.chat_message("assistant"):
         st.markdown(resposta_final)
