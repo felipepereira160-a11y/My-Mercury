@@ -158,7 +158,7 @@ with st.sidebar:
     st.header("Base de Conhecimento")
     tipos_permitidos = ["csv", "xlsx", "xls"]
 
-    data_file = st.file_uploader("1. Upload Pesquisa de O.S (OS)", type=tipos_permitidos)
+    data_file = st.file_uploader("1. 📊 Upload Pesquisa de O.S (OS)", type=tipos_permitidos)
     if data_file:
         try:
             st.session_state.df_dados = carregar_dataframe(data_file, separador_padrao=';')
@@ -167,7 +167,7 @@ with st.sidebar:
             st.error(f"Erro nos dados: {e}")
 
     st.markdown("---")
-    map_file = st.file_uploader("2. Upload do Mapeamento de RT (Fixo)", type=tipos_permitidos)
+    map_file = st.file_uploader("2. 🌍 Upload do Mapeamento de RT (Fixo)", type=tipos_permitidos)
     if map_file:
         try:
             st.session_state.df_mapeamento = carregar_dataframe(map_file, separador_padrao=',')
@@ -176,7 +176,7 @@ with st.sidebar:
             st.error(f"Erro no mapeamento: {e}")
 
     st.markdown("---")
-    devolucao_file = st.file_uploader("3. Upload de Itens a Instalar (Devolução)", type=tipos_permitidos)
+    devolucao_file = st.file_uploader("3. 📥 Upload de Itens a Instalar (Devolução)", type=tipos_permitidos)
     if devolucao_file:
         try:
             st.session_state.df_devolucao = carregar_dataframe(devolucao_file, separador_padrao=';')
@@ -185,7 +185,7 @@ with st.sidebar:
             st.error(f"Erro na base de devolução: {e}")
 
     st.markdown("---")
-    pagamento_file = st.file_uploader("4. Upload da Base de Pagamento (Duplicidade)", type=tipos_permitidos)
+    pagamento_file = st.file_uploader("4. 💵 Upload da Base de Pagamento (Duplicidade)", type=tipos_permitidos)
     if pagamento_file:
         try:
             st.session_state.df_pagamento = carregar_dataframe(pagamento_file, separador_padrao=';')
@@ -539,7 +539,7 @@ if prompt := st.chat_input("Envie uma pergunta ou mensagem..."):
     # --- DETECÇÃO DE PERGUNTA SOBRE O DESENVOLVEDOR ---
     prompt_lower = prompt.lower()
     if any(p in prompt_lower for p in ["quem criou você", "quem te desenvolveu", "quem te fez", "quem é seu criador"]):
-        resposta_final = "Fui desenvolvido pelo Felipe Castro."
+        resposta_final = "Fui desenvolvido pelo Felipe Castro.🚀"
     else:
         tipo = detectar_tipo_pergunta(prompt)
         if tipo == "dados":
