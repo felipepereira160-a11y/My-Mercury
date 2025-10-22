@@ -553,7 +553,7 @@ if prompt := st.chat_input("Envie uma pergunta ou mensagem..."):
 
     tipo = detectar_tipo_pergunta(prompt)
     resposta_final = ""
-
+tipo = detectar_tipo_pergunta(prompt)
 with st.chat_message("assistant"):
     with st.spinner("Pensando..."):
         # --- Perguntas sobre dados ---
