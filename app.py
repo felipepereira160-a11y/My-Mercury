@@ -512,9 +512,17 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
         except Exception as e:
             st.error(f"Ocorreu um erro inesperado no Otimizador. Verifique os nomes das colunas. Detalhe: {e}")
 
-# --- SEÇÃO DO CHAT DE IA (Mercúrio) – unificação com análise de dados ---
+# --- SEÇÃO DO CHAT DE IA (Mercúrio) ---
 st.markdown("---")
 st.header("💬 Converse com a IA (Mercúrio)")
+
+# Definindo a personalidade Mercúrio
+system_prompt = """
+Você é Mercúrio, um assistente virtual brasileiro, inteligente, amigável e prestativo.
+Fale sempre de forma clara, leve e motivadora, com exemplos práticos quando possível.
+Responda perguntas sobre dados usando pandas, Excel, análises financeiras e otimização logística.
+Nunca diga que é um modelo de linguagem genérico. Mantenha a personalidade de Mercúrio.
+"""
 
 # Exibe histórico do chat
 for message in st.session_state.display_history:
@@ -523,6 +531,7 @@ for message in st.session_state.display_history:
 
 # Entrada do chat
 if prompt := st.chat_input("Envie uma pergunta ou mensagem..."):
+    # Adiciona prompt do usuário ao histórico
     st.session_state.display_history.append({"role": "user", "content": prompt})
     st.session_state.chat_history.append({"role": "user", "content": prompt})
 
@@ -535,15 +544,9 @@ if prompt := st.chat_input("Envie uma pergunta ou mensagem..."):
         resposta_final = "Fui desenvolvido pelo Felipe Castro.🚀"
     else:
         tipo = detectar_tipo_pergunta(prompt)
+        # --- Perguntas relacionadas a dados ---
         if tipo == "dados":
-            # envia para análise de dados (executar_analise_pandas)
-            if st.session_state.df_dados is not None:
-                df = st.session_state.df_dados
-            elif st.session_state.df_mapeamento is not None:
-                df = st.session_state.df_mapeamento
-            else:
-                df = None
-
+            df = st.session_state.df_dados if st.session_state.df_dados is not None else st.session_state.df_mapeamento
             if df is not None:
                 df_hash = pd.util.hash_pandas_object(df).sum()
                 df_type = 'mapeamento' if df is st.session_state.df_mapeamento else 'dados'
@@ -554,23 +557,22 @@ if prompt := st.chat_input("Envie uma pergunta ou mensagem..."):
                 elif erro:
                     resposta_final = f"Ocorreu um erro na análise: {erro}"
                 else:
-                    # formata o resultado para apresentação (DataFrame -> tabela; scalar -> texto)
-                    if isinstance(resultado_analise, pd.DataFrame):
-                        st.session_state.display_history.append({"role": "assistant", "content": "Segue o resultado da análise em tabela abaixo."})
-                        with st.chat_message("assistant"):
-                            st.dataframe(resultado_analise)
-                        resposta_final = "Tabela exibida acima."
-                    else:
-                        resposta_final = str(resultado_analise)
+                    resposta_final = str(resultado_analise)
             else:
-                resposta_final = "Nenhuma base de dados carregada para análise. Faça upload de uma planilha na barra lateral."
+                resposta_final = "Nenhum dado carregado para análise."
+        # --- Perguntas gerais enviadas ao Gemini ---
         else:
-            # --- Para perguntas gerais, pode enviar ao Gemini ---
             try:
-                response = st.session_state.model.generate_content(prompt)
+                response = st.session_state.model.generate_content(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt}
+                    ]
+                )
                 resposta_final = response.text.strip()
             except Exception as e:
                 resposta_final = f"Erro ao gerar resposta: {e}"
 
+    # Exibe resposta do Mercúrio
     with st.chat_message("assistant"):
         st.markdown(resposta_final)
