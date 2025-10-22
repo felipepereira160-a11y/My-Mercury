@@ -307,57 +307,48 @@ for message in st.session_state.display_history:
         st.markdown(message["content"])
 
 # Entrada do chat
-if prompt := st.chat_input("Envie uma pergunta ou mensagem..."):
-    # Adiciona prompt do usuário ao histórico
-    st.session_state.display_history.append({"role": "user", "content": prompt})
-    st.session_state.chat_history.append({"role": "user", "content": prompt})
+prompt_lower = prompt.lower()
 
-    with st.chat_message("user"):
-        st.markdown(prompt)
+# --- Perguntas sobre o desenvolvedor ---
+if any(p in prompt_lower for p in ["quem criou você", "quem te desenvolveu", "quem te fez", "quem é seu criador"]):
+    resposta_final = "Fui desenvolvido pelo Felipe Castro.🚀"
 
-    # --- DETECÇÃO DE PERGUNTA SOBRE O DESENVOLVEDOR ---
-    prompt_lower = prompt.lower()
-    if any(p in prompt_lower for p in ["quem criou você", "quem te desenvolveu", "quem te fez", "quem é seu criador"]):
-        resposta_final = "Fui desenvolvido pelo Felipe Castro.🚀"
-    else:
-        tipo = detectar_tipo_pergunta(prompt)
-        # --- Perguntas relacionadas a dados ---
-        if tipo == "dados":
-            df = st.session_state.df_dados if st.session_state.df_dados is not None else st.session_state.df_mapeamento
-            if df is not None:
-                df_hash = pd.util.hash_pandas_object(df).sum()
-                df_type = 'mapeamento' if df is st.session_state.df_mapeamento else 'dados'
-                resultado_analise, erro = executar_analise_pandas(df_hash, prompt, df_type)
-
-                if erro == "PERGUNTA_INVALIDA":
-                    resposta_final = "Desculpe, só posso responder a perguntas relacionadas aos dados carregados."
-                elif erro:
-                    resposta_final = f"Ocorreu um erro na análise: {erro}"
-                else:
-                    # formata o resultado para apresentação
-                    if isinstance(resultado_analise, pd.DataFrame):
-                        st.session_state.display_history.append({"role": "assistant", "content": "Segue o resultado da análise em tabela abaixo."})
-                        with st.chat_message("assistant"):
-                            st.dataframe(resultado_analise)
-                        resposta_final = "Tabela exibida acima."
-                    else:
-                        resposta_final = str(resultado_analise)
+# --- Perguntas sobre Ordens ---
+elif any(p in prompt_lower for p in ["quantas ordens", "ordens agendadas", "ordens concluídas", "ordens pendentes", "ordens canceladas"]):
+    df = st.session_state.df_dados
+    if df is not None:
+        status_col = next((col for col in df.columns if 'status' in col.lower()), None)
+        if status_col:
+            if "agendadas" in prompt_lower:
+                num = len(df[df[status_col] == "Agendada"])
+                resposta_final = f"Temos {num} ordens agendadas."
+            elif "concluídas" in prompt_lower or "realizadas" in prompt_lower:
+                num = len(df[df[status_col] == "Realizada"])
+                resposta_final = f"Temos {num} ordens concluídas."
+            elif "pendentes" in prompt_lower:
+                num = len(df[df[status_col] == "Pendente"])
+                resposta_final = f"Temos {num} ordens pendentes."
+            elif "canceladas" in prompt_lower:
+                num = len(df[df[status_col] == "Cancelada"])
+                resposta_final = f"Temos {num} ordens canceladas."
             else:
-                resposta_final = "Nenhuma base de dados carregada para análise. Faça upload de uma planilha na barra lateral."
+                resposta_final = f"Temos {len(df)} ordens no total."
         else:
-            # --- Perguntas gerais enviadas ao Gemini com personalidade Mercúrio ---
-            try:
-                response = st.session_state.model.generate_content(
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": prompt}
-                    ]
-                )
-                resposta_final = response.text.strip()
-            except Exception as e:
-                resposta_final = f"Erro ao gerar resposta: {e}"
+            resposta_final = "Não encontrei a coluna de status no arquivo de agendamentos."
+    else:
+        resposta_final = "Nenhuma base de ordens carregada. Faça upload de sua planilha na barra lateral."
 
-    # Adiciona resposta da IA ao histórico e exibe
-    st.session_state.display_history.append({"role": "assistant", "content": resposta_final})
-    with st.chat_message("assistant"):
-        st.markdown(resposta_final)
+# --- Perguntas sobre Mapeamento / Custos / Fixo / Devolução / Duplicidade ---
+elif any(p in prompt_lower for p in ["mapeamento", "custos", "fixo", "duplicidade", "devolução"]):
+    df_map = None
+    if st.session_state.df_mapeamento is not None:
+        df_map = st.session_state.df_mapeamento
+    # Aqui você pode incluir lógica para outras abas, ex: fixo, duplicidade, devolução
+    # Exemplo:
+    # if "duplicidade" in prompt_lower and st.session_state.df_duplicidade is not None:
+    #     df_map = st.session_state.df_duplicidade
+
+    if df_map is not None:
+        resposta_final = f"A base de dados está carregada: {df_map.shape[0]} linhas x {df_map.shape[1]} colunas."
+    else:
+        resposta_final = "Nenhuma base de mapeamento ou custos carregada. Faça upload de seus arquivos na barra lateral."
