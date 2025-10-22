@@ -135,27 +135,21 @@ def carregar_dataframe(arquivo, separador_padrao=','):
 
 # Função de detecção (do primeiro código) para decidir chat x dados
 def detectar_tipo_pergunta(texto):
-    texto = texto.lower()
-    palavras_dados = ["tabela", "csv", "coluna", "quantos", "linhas", "ordem", "agendamento",
-                      "representante", "rt", "valor", "duplicidade", "proximidade", "serviço", "mapeamento", "quem atende", "telefone", "contato"]
-    if any(p in texto for p in palavras_dados):
-        return "dados"
-    return "chat"
+    if not texto:
+        return "geral"  # evita erro se for None ou vazio
 
-# Função de análise simples (do primeiro código) — usa generate_content para perguntas sobre dados
-def executar_analise_simples(prompt, df):
-    try:
-        prompt_engenharia = f"""
-        Você é um especialista em Python e Pandas.
-        Gere um código que responda à pergunta abaixo usando o DataFrame `df`.
-        Retorne apenas o resultado, sem explicações, em texto simples.
-        Pergunta: {prompt}
-        Colunas disponíveis: {', '.join(df.columns)}
-        """
-        resposta = st.session_state.model.generate_content(prompt_engenharia)
-        return resposta.text.strip()
-    except Exception as e:
-        return f"Erro na análise: {e}"
+    texto = str(texto).lower()
+
+    palavras_chave_dados = [
+        "quantos", "média", "soma", "valor", "tabela",
+        "arquivo", "linhas", "colunas", "dados", "análise",
+        "planilha", "relatório", "total", "quantidade"
+    ]
+    if any(p in texto for p in palavras_chave_dados):
+        return "dados"
+    else:
+        return "geral"
+
 
 # ------------------------------------------------------------
 # BARRA LATERAL - UPLOADS (mantive a lógica do segundo código)
