@@ -68,6 +68,9 @@ if 'df_devolucao' not in st.session_state:
     st.session_state.df_devolucao = None
 if 'df_pagamento' not in st.session_state:
     st.session_state.df_pagamento = None
+# Nova: manutenção
+if 'df_manutencao' not in st.session_state:
+    st.session_state.df_manutencao = None
 
 # ------------------------------------------------------------
 # FUNÇÕES AUXILIARES (combinei e mantive as do seu código)
@@ -150,7 +153,6 @@ def detectar_tipo_pergunta(texto):
     else:
         return "geral"
 
-
 # ------------------------------------------------------------
 # BARRA LATERAL - UPLOADS (mantive a lógica do segundo código)
 # ------------------------------------------------------------
@@ -192,6 +194,16 @@ with st.sidebar:
             st.success("Base de pagamento carregada!")
         except Exception as e:
             st.error(f"Erro na base de pagamento: {e}")
+
+    st.markdown("---")
+    # ---------- NOVO UPLOAD: Relatório de Manutenções ----------
+    manut_file = st.file_uploader("5. 🔧 Upload de Relatório de Manutenções", type=tipos_permitidos)
+    if manut_file:
+        try:
+            st.session_state.df_manutencao = carregar_dataframe(manut_file, separador_padrao=';')
+            st.success("Relatório de Manutenções carregado!")
+        except Exception as e:
+            st.error(f"Erro no relatório de manutenções: {e}")
 
     if st.button("Limpar Tudo"):
         st.session_state.clear()
@@ -422,6 +434,201 @@ if st.session_state.df_mapeamento is not None:
         map_data['size'] = 1000 if cidade_selecionada_map or rep_selecionado_map else 100
         if not map_data.empty: st.map(map_data, color='#FF4B4B', size='size')
         else: st.warning("Nenhum resultado com coordenadas para exibir no mapa.")
+
+# ----------------- NOVA SEÇÃO: Relatório de Manutenções -----------------
+if st.session_state.df_manutencao is not None:
+    st.markdown("---")
+    st.header("🔧 Relatório de Manutenções - Visualização Rápida")
+    df_manu = st.session_state.df_manutencao.copy()
+
+    # Detecta colunas relevantes com várias variações possíveis
+    def detect(cols, keywords):
+        for k in keywords:
+            for c in cols:
+                if k in c.lower().replace(' ', ''):
+                    return c
+        return None
+
+    cols = [c for c in df_manu.columns]
+    abertura_col = detect(cols, ['dataabertura', 'data de abertura', 'dataabert', 'data abertura', 'data abertura os', 'data abertura os'])
+    cliente_col_manu = detect(cols, ['cliente', 'clientenome', 'nome cliente', 'nome do cliente'])
+    cidade_col_manu = detect(cols, ['cidadeagendamento', 'cidadeagendamento', 'cidade os', 'cidade', 'cidadeagend'])
+    uf_col_manu = detect(cols, ['ufagendamento', 'uf', 'estado', 'ufagend'])
+    valor_desloc_col = detect(cols, ['valordeslocamento', 'valor deslocamento', 'valor desloc', 'valor deslocamento r$', 'valor desloc'])
+    rep_col_manu = detect(cols, ['representante', 'representante tecnico', 'nome representante', 'rep'])
+    tec_col_manu = detect(cols, ['tecnico', 'técnico', 'nome tecnico', 'nome do tecnico'])
+    tipo_servico_col = detect(cols, ['tipo', 'tipo servico', 'tipo de servico', 'classificacao', 'tipo de atendimento', 'tipoos', 'serviço'])
+
+    # Normaliza nomes para exibir
+    display_cols = {}
+    if abertura_col: display_cols['Data Abertura'] = abertura_col
+    if cliente_col_manu: display_cols['Cliente'] = cliente_col_manu
+    if cidade_col_manu: display_cols['Cidade Agendamento'] = cidade_col_manu
+    if uf_col_manu: display_cols['UF Agendamento'] = uf_col_manu
+    if valor_desloc_col: display_cols['Valor Deslocamento'] = valor_desloc_col
+    if rep_col_manu: display_cols['Representante'] = rep_col_manu
+    if tec_col_manu: display_cols['Técnico'] = tec_col_manu
+    if tipo_servico_col: display_cols['Tipo Serviço'] = tipo_servico_col
+
+    if not display_cols:
+        st.error("Não foi possível encontrar colunas esperadas no relatório de manutenções. Verifique nomes das colunas.")
+    else:
+        # Converte data de abertura para apenas data (se encontrada)
+        if abertura_col:
+            try:
+                df_manu[abertura_col] = pd.to_datetime(df_manu[abertura_col], dayfirst=True, errors='coerce').dt.date
+            except Exception:
+                # tenta sem dayfirst
+                df_manu[abertura_col] = pd.to_datetime(df_manu[abertura_col], errors='coerce').dt.date
+
+        # Conversão do valor deslocamento
+        if valor_desloc_col:
+            try:
+                df_manu['_VALOR_DESLOC_NUM'] = safe_to_numeric(df_manu[valor_desloc_col])
+            except Exception:
+                df_manu['_VALOR_DESLOC_NUM'] = pd.to_numeric(df_manu[valor_desloc_col], errors='coerce').fillna(0)
+
+        # Filtro opcional: somente Manutenção (se a coluna existir)
+        somente_manut = False
+        if tipo_servico_col:
+            tipos_unicos = df_manu[tipo_servico_col].dropna().unique().tolist()
+            # se houver 'Manutenção' dentre os tipos, ofereça a opção
+            if any('manut' in str(t).lower() for t in tipos_unicos):
+                somente_manut = st.checkbox("Exibir somente registros classificados como 'Manutenção'", value=True)
+
+        df_manu_display = df_manu.copy()
+        if somente_manut and tipo_servico_col:
+            df_manu_display = df_manu_display[df_manu_display[tipo_servico_col].str.contains('manut', case=False, na=False)]
+
+        # Prepara tabela resumida
+        tabela_mostrar = []
+        for disp_name, col_name in display_cols.items():
+            tabela_mostrar.append(col_name)
+        resumo = df_manu_display[tabela_mostrar].copy()
+        # renomeia para exibição amigável
+        resumo.columns = list(display_cols.keys())
+
+        st.subheader("Resumo (Tabela)")
+        st.dataframe(resumo)
+
+        # --- Tentativa de obter coordenadas ---
+        # 1) checar se o próprio relatório traz lat/lon
+        lat_col_manu = next((c for c in df_manu.columns if 'lat' in c.lower()), None)
+        lon_col_manu = next((c for c in df_manu.columns if 'lon' in c.lower() or 'lng' in c.lower()), None)
+
+        coords_available = False
+        map_df = None
+
+        if lat_col_manu and lon_col_manu:
+            map_df = df_manu_display.copy()
+            map_df = map_df.rename(columns={lat_col_manu: 'lat', lon_col_manu: 'lon'})
+            map_df['lat'] = pd.to_numeric(map_df['lat'], errors='coerce')
+            map_df['lon'] = pd.to_numeric(map_df['lon'], errors='coerce')
+            map_df.dropna(subset=['lat', 'lon'], inplace=True)
+            coords_available = not map_df.empty
+
+        # 2) se não houver, tentar casar com df_mapeamento por cidade + uf
+        if not coords_available and st.session_state.df_mapeamento is not None and cidade_col_manu is not None:
+            try:
+                df_map_for_join = st.session_state.df_mapeamento.copy()
+                # detecta colunas padrão de cidade e uf no mapeamento
+                map_city_col_candidates = [c for c in df_map_for_join.columns if 'cidade' in c.lower() or 'nm_cidade' in c.lower()]
+                map_uf_col_candidates = [c for c in df_map_for_join.columns if 'uf' in c.lower() or 'estado' in c.lower()]
+                map_lat_col_candidates = [c for c in df_map_for_join.columns if 'lat' in c.lower()]
+                map_lon_col_candidates = [c for c in df_map_for_join.columns if 'lon' in c.lower() or 'lng' in c.lower()]
+
+                if map_city_col_candidates and map_lat_col_candidates and map_lon_col_candidates:
+                    map_city_col = map_city_col_candidates[0]
+                    map_lat_col = map_lat_col_candidates[0]
+                    map_lon_col = map_lon_col_candidates[0]
+                    # optional uf in join
+                    if map_uf_col_candidates and uf_col_manu:
+                        map_uf_col = map_uf_col_candidates[0]
+                        left = df_manu_display[[cidade_col_manu, uf_col_manu]].copy()
+                        left.columns = ['cidade_join', 'uf_join']
+                        left['cidade_join'] = left['cidade_join'].astype(str).str.strip().str.lower()
+                        left['uf_join'] = left['uf_join'].astype(str).str.strip().str.lower()
+                        right = df_map_for_join[[map_city_col, map_uf_col, map_lat_col, map_lon_col]].copy()
+                        right.columns = ['cidade_join', 'uf_join', 'lat', 'lon']
+                        right['cidade_join'] = right['cidade_join'].astype(str).str.strip().str.lower()
+                        right['uf_join'] = right['uf_join'].astype(str).str.strip().str.lower()
+                        merged = pd.merge(left, right, on=['cidade_join', 'uf_join'], how='left')
+                        merged = merged[['lat', 'lon']]
+                        map_df = df_manu_display.copy()
+                        map_df = pd.concat([map_df.reset_index(drop=True), merged.reset_index(drop=True)], axis=1)
+                        map_df['lat'] = pd.to_numeric(map_df['lat'], errors='coerce')
+                        map_df['lon'] = pd.to_numeric(map_df['lon'], errors='coerce')
+                        map_df.dropna(subset=['lat', 'lon'], inplace=True)
+                        coords_available = not map_df.empty
+                    else:
+                        # join apenas por cidade
+                        left = df_manu_display[[cidade_col_manu]].copy()
+                        left.columns = ['cidade_join']
+                        left['cidade_join'] = left['cidade_join'].astype(str).str.strip().str.lower()
+                        right = df_map_for_join[[map_city_col, map_lat_col, map_lon_col]].copy()
+                        right.columns = ['cidade_join', 'lat', 'lon']
+                        right['cidade_join'] = right['cidade_join'].astype(str).str.strip().str.lower()
+                        merged = pd.merge(left, right, on=['cidade_join'], how='left')
+                        map_df = df_manu_display.copy()
+                        map_df = pd.concat([map_df.reset_index(drop=True), merged.reset_index(drop=True)], axis=1)
+                        map_df['lat'] = pd.to_numeric(map_df['lat'], errors='coerce')
+                        map_df['lon'] = pd.to_numeric(map_df['lon'], errors='coerce')
+                        map_df.dropna(subset=['lat', 'lon'], inplace=True)
+                        coords_available = not map_df.empty
+            except Exception:
+                coords_available = False
+
+        # Exibir mapa se tivermos coordenadas
+        if coords_available and map_df is not None and not map_df.empty:
+            st.subheader("Visualização no Mapa - Manutenções")
+            # cria colunas de tooltip com as informações pedidas
+            tooltip_cols = {}
+            if abertura_col: tooltip_cols['Data Abertura'] = map_df[abertura_col].astype(str)
+            if cliente_col_manu: tooltip_cols['Cliente'] = map_df[cliente_col_manu].astype(str)
+            if cidade_col_manu: tooltip_cols['Cidade'] = map_df[cidade_col_manu].astype(str)
+            if uf_col_manu: tooltip_cols['UF'] = map_df[uf_col_manu].astype(str)
+            if valor_desloc_col: tooltip_cols['Valor Deslocamento'] = map_df[valor_desloc_col].astype(str)
+            if rep_col_manu: tooltip_cols['Representante'] = map_df[rep_col_manu].astype(str)
+            if tec_col_manu: tooltip_cols['Técnico'] = map_df[tec_col_manu].astype(str)
+
+            # prepara dataframe para pydeck / st.map
+            viz_df = map_df.copy()
+            viz_df['lat'] = pd.to_numeric(viz_df['lat'], errors='coerce')
+            viz_df['lon'] = pd.to_numeric(viz_df['lon'], errors='coerce')
+            viz_df = viz_df.dropna(subset=['lat', 'lon']).reset_index(drop=True)
+
+            # usa pydeck com tooltip para visual mais rico (se pydeck disponível no ambiente)
+            try:
+                import pydeck as pdk
+                viz_df['size'] = 100
+                st.write("Mapa interativo (clique nos pontos para ver detalhes):")
+                layer = pdk.Layer(
+                    "ScatterplotLayer",
+                    data=viz_df,
+                    get_position=["lon", "lat"],
+                    get_fill_color=[255, 0, 80, 160],
+                    get_radius="size",
+                    radius_scale=1,
+                    pickable=True
+                )
+                # build tooltip text
+                tooltip_html = ""
+                for label, col in tooltip_cols.items():
+                    tooltip_html += f"<b>{label}:</b> {{{label}}}<br/>"
+                # but pydeck expects column names in the data; ensure columns exist with the display names
+                for label, series in tooltip_cols.items():
+                    viz_df[label] = series.values
+                view_state = pdk.ViewState(latitude=viz_df['lat'].mean(), longitude=viz_df['lon'].mean(), zoom=6, pitch=0)
+                r = pdk.Deck(layers=[layer], initial_view_state=view_state, tooltip={"html": tooltip_html, "style": {"color": "white"}})
+                st.pydeck_chart(r)
+            except Exception:
+                # fallback simples usando st.map
+                st.warning("pydeck não disponível ou falhou — exibindo mapa simples (st.map).")
+                st.map(viz_df.rename(columns={'lat': 'latitude', 'lon': 'longitude'})[['latitude', 'longitude']])
+        else:
+            st.info("Não foi possível localizar coordenadas para exibir o mapa automaticamente.")
+            st.info("Se você quiser visualizar o mapa, carregue também o arquivo de Mapeamento de RT (opção 2) com colunas de cidade e latitude/longitude correspondentes.")
+            # já mostramos a tabela resumo acima
 
 # --- OTIMIZADOR DE PROXIMIDADE (Usa df_dados e df_mapeamento) ---
 if st.session_state.df_dados is not None and st.session_state.df_mapeamento is not None:
