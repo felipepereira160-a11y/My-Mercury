@@ -306,49 +306,57 @@ for message in st.session_state.display_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Entrada do chat
-prompt_lower = prompt.lower()
+# Entrada do usuário
+prompt = st.chat_input("Digite sua pergunta aqui...")
+if prompt:
+    st.session_state.display_history.append({"role": "user", "content": prompt})
+    prompt_lower = prompt.lower()
 
-# --- Perguntas sobre o desenvolvedor ---
-if any(p in prompt_lower for p in ["quem criou você", "quem te desenvolveu", "quem te fez", "quem é seu criador"]):
-    resposta_final = "Fui desenvolvido pelo Felipe Castro.🚀"
+    # --- Perguntas sobre o desenvolvedor ---
+    if any(p in prompt_lower for p in ["quem criou você", "quem te desenvolveu", "quem te fez", "quem é seu criador"]):
+        resposta_final = "Fui desenvolvido pelo Felipe Castro.🚀"
 
-# --- Perguntas sobre Ordens ---
-elif any(p in prompt_lower for p in ["quantas ordens", "ordens agendadas", "ordens concluídas", "ordens pendentes", "ordens canceladas"]):
-    df = st.session_state.df_dados
-    if df is not None:
-        status_col = next((col for col in df.columns if 'status' in col.lower()), None)
-        if status_col:
-            if "agendadas" in prompt_lower:
-                num = len(df[df[status_col] == "Agendada"])
-                resposta_final = f"Temos {num} ordens agendadas."
-            elif "concluídas" in prompt_lower or "realizadas" in prompt_lower:
-                num = len(df[df[status_col] == "Realizada"])
-                resposta_final = f"Temos {num} ordens concluídas."
-            elif "pendentes" in prompt_lower:
-                num = len(df[df[status_col] == "Pendente"])
-                resposta_final = f"Temos {num} ordens pendentes."
-            elif "canceladas" in prompt_lower:
-                num = len(df[df[status_col] == "Cancelada"])
-                resposta_final = f"Temos {num} ordens canceladas."
+    # --- Perguntas sobre Ordens ---
+    elif any(p in prompt_lower for p in ["quantas ordens", "ordens agendadas", "ordens concluídas", "ordens pendentes", "ordens canceladas"]):
+        df = st.session_state.df_dados
+        if df is not None:
+            status_col = next((col for col in df.columns if 'status' in col.lower()), None)
+            if status_col:
+                if "agendadas" in prompt_lower:
+                    num = len(df[df[status_col] == "Agendada"])
+                    resposta_final = f"Temos {num} ordens agendadas."
+                elif "concluídas" in prompt_lower or "realizadas" in prompt_lower:
+                    num = len(df[df[status_col] == "Realizada"])
+                    resposta_final = f"Temos {num} ordens concluídas."
+                elif "pendentes" in prompt_lower:
+                    num = len(df[df[status_col] == "Pendente"])
+                    resposta_final = f"Temos {num} ordens pendentes."
+                elif "canceladas" in prompt_lower:
+                    num = len(df[df[status_col] == "Cancelada"])
+                    resposta_final = f"Temos {num} ordens canceladas."
+                else:
+                    resposta_final = f"Temos {len(df)} ordens no total."
             else:
-                resposta_final = f"Temos {len(df)} ordens no total."
+                resposta_final = "Não encontrei a coluna de status no arquivo de agendamentos."
         else:
-            resposta_final = "Não encontrei a coluna de status no arquivo de agendamentos."
-    else:
-        resposta_final = "Nenhuma base de ordens carregada. Faça upload de sua planilha na barra lateral."
+            resposta_final = "Nenhuma base de ordens carregada. Faça upload de sua planilha na barra lateral."
 
-# --- Perguntas sobre Mapeamento / Custos / Fixo / Devolução / Duplicidade ---
-elif any(p in prompt_lower for p in ["mapeamento", "custos", "fixo", "duplicidade", "devolução"]):
-    df_map = None
-    if st.session_state.df_mapeamento is not None:
-        df_map = st.session_state.df_mapeamento
-    # Aqui você pode incluir lógica para outras abas, ex: fixo, duplicidade, devolução
-    # Exemplo:
-    # if "duplicidade" in prompt_lower and st.session_state.df_duplicidade is not None:
-    #     df_map = st.session_state.df_duplicidade
+    # --- Perguntas sobre Mapeamento / Custos / Fixo / Devolução / Duplicidade ---
+    elif any(p in prompt_lower for p in ["mapeamento", "custos", "fixo", "duplicidade", "devolução"]):
+        df_map = None
+        if st.session_state.df_mapeamento is not None:
+            df_map = st.session_state.df_mapeamento
+        # Aqui você pode incluir lógica para outras abas, ex: fixo, duplicidade, devolução
 
-    if df_map is not None:
-        resposta_final = f"A base de dados está carregada: {df_map.shape[0]} linhas x {df_map.shape[1]} colunas."
+        if df_map is not None:
+            resposta_final = f"A base de dados está carregada: {df_map.shape[0]} linhas x {df_map.shape[1]} colunas."
+        else:
+            resposta_final = "Nenhuma base de mapeamento ou custos carregada. Faça upload de seus arquivos na barra lateral."
+
     else:
-        resposta_final = "Nenhuma base de mapeamento ou custos carregada. Faça upload de seus arquivos na barra lateral."
+        resposta_final = "Não entendi sua pergunta. Tente algo relacionado a ordens ou mapeamento."
+
+    # Adiciona a resposta da IA ao histórico
+    st.session_state.display_history.append({"role": "assistant", "content": resposta_final})
+    with st.chat_message("assistant"):
+        st.markdown(resposta_final)
