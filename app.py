@@ -164,7 +164,7 @@ with st.sidebar:
     st.header("Base de Conhecimento")
     tipos_permitidos = ["csv", "xlsx", "xls"]
 
-    data_file = st.file_uploader("1. Upload de Agendamentos (OS)", type=tipos_permitidos)
+    data_file = st.file_uploader("1. Upload Pesquisa de O.S (OS)", type=tipos_permitidos)
     if data_file:
         try:
             st.session_state.df_dados = carregar_dataframe(data_file, separador_padrao=';')
