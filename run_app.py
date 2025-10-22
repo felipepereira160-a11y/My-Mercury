@@ -292,41 +292,21 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
 # --- Seção do Chat de IA ---
 st.markdown("---")
 st.header("💬 Converse com a IA para análises personalizadas")
-
-# Exibir histórico
 for message in st.session_state.display_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Entrada do usuário
 if prompt := st.chat_input("Faça uma pergunta específica..."):
     st.session_state.display_history.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
-
-    # Determinar qual DataFrame usar
-    if any(keyword in prompt.lower() for keyword in ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]) and st.session_state.df_mapeamento is not None:
+    keywords_mapeamento = ["quem atende", "representante de", "contato do rt", "telefone de", "rt para", "mapeamento"]
+    df_type = 'chat'
+    if any(keyword in prompt.lower() for keyword in keywords_mapeamento) and st.session_state.df_mapeamento is not None:
         df_type = 'mapeamento'
     elif st.session_state.df_dados is not None:
         df_type = 'dados'
-    else:
-        df_type = None
-
     with st.chat_message("assistant"):
-        if df_type:
-            df_hash = hash(str(st.session_state.df_dados) if df_type=='dados' else str(st.session_state.df_mapeamento))
+        if df_type in ['mapeamento', 'dados']:
             with st.spinner(f"Analisando no arquivo de '{df_type}'..."):
-                resultado, erro = executar_analise_pandas(df_hash, prompt, df_type)
-                if erro:
-                    if erro == "PERGUNTA_INVALIDA":
-                        st.markdown("❌ Pergunta inválida para os dados carregados. Tente algo relacionado às colunas dos arquivos.")
-                    else:
-                        st.markdown(f"❌ {erro}")
-                else:
-                    # Mostrar resultado
-                    if isinstance(resultado, pd.DataFrame):
-                        st.dataframe(resultado)
-                    else:
-                        st.markdown(f"✅ Resultado: `{resultado}`")
-        else:
-            st.markdown("❌ Nenhum arquivo carregado para análise. Faça upload de um arquivo primeiro.")
+               
