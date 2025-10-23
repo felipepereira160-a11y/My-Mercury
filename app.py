@@ -131,34 +131,30 @@ def detectar_tipo_pergunta(texto):
     ]
     return "dados" if any(p in texto for p in palavras_chave_dados) else "geral"
 
-# ------------------------------------------------------------
-# BARRA LATERAL - UPLOADS
-# ------------------------------------------------------------
 with st.sidebar:
     # --- Estilo visual da barra lateral ---
-st.markdown("""
-    <style>
-    [data-testid="stSidebar"] {
-        background-color: #1e1e1e;
-        padding: 1rem;
-    }
-    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
-        color: #ff66b2;
-    }
-    [data-testid="stSidebar"] .stFileUploader {
-        background-color: #2b2b2b;
-        padding: 10px;
-        border-radius: 10px;
-        margin-bottom: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.25);
-    }
-    [data-testid="stSidebar"] .stFileUploader:hover {
-        background-color: #333333;
-    }
-    </style>
-""", unsafe_allow_html=True)
+    st.markdown("""
+        <style>
+        [data-testid="stSidebar"] {
+            background-color: #1e1e1e;
+            padding: 1rem;
+        }
+        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+            color: #ff66b2;
+        }
+        [data-testid="stSidebar"] .stFileUploader {
+            background-color: #2b2b2b;
+            padding: 10px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.25);
+        }
+        [data-testid="stSidebar"] .stFileUploader:hover {
+            background-color: #333333;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
-with st.sidebar:
     st.header("📦 Base de Conhecimento")
     tipos_permitidos = ["csv", "xlsx", "xls"]
 
@@ -199,13 +195,10 @@ with st.sidebar:
         if ativos_file:
             try:
                 df_ativos = carregar_dataframe(ativos_file, separador_padrao=';')
-
-                # --- Filtrar clientes indesejados ---
                 termos_excluidos = ['ceabs', 'fca chrysler']
                 col_cliente = next((c for c in df_ativos.columns if 'cliente' in c.lower() and 'id' not in c.lower()), None)
                 if col_cliente:
                     df_ativos = df_ativos[~df_ativos[col_cliente].str.lower().str.contains('|'.join(termos_excluidos), na=False)]
-
                 st.session_state.df_ativos = df_ativos
                 st.success("Base de Ativos carregada e filtrada com sucesso! ✅")
             except Exception as e:
