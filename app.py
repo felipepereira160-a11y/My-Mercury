@@ -514,7 +514,7 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
 
 # --- SEÇÃO DO CHAT DE IA (Mercúrio) – unificação com análise de dados ---
 st.markdown("---")
-st.header("💬 Converse com a IA (Mercúrio)")
+st.header("💬 Fale com Mercúrio")
 # --- Assinatura visível ---
 st.markdown(
     """
