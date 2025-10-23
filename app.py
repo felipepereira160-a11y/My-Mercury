@@ -515,6 +515,17 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
 # --- SEÇÃO DO CHAT DE IA (Mercúrio) – unificação com análise de dados ---
 st.markdown("---")
 st.header("💬 Converse com a IA (Mercúrio)")
+# --- Assinatura visível ---
+st.markdown(
+    """
+    <div style='text-align: center; margin-top: -10px; margin-bottom: 20px;'>
+        <hr style='margin-top: 10px; margin-bottom: 10px; border: none; border-top: 1px solid #666;'/>
+        <p style='font-size: 14px; color: gray;'>🧠 Criado por: <b>Felipe Castro</b> — 23/10/2025</p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
 
 # Exibe histórico do chat
 for message in st.session_state.display_history:
