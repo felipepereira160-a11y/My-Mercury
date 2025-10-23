@@ -584,29 +584,31 @@ Nunca diga que é um modelo de linguagem genérico. Mantenha a personalidade de 
     with st.chat_message("assistant"):
         st.markdown(resposta_final)
 
-        # --- Assinatura fixa no rodapé ---
+       # --- Assinatura fixa no rodapé (modo escuro aprimorado) ---
 st.markdown(
     """
     <style>
     .assinatura-fixed {
         position: fixed;
-        bottom: 10px;
+        bottom: 0;
         left: 0;
         width: 100%;
         text-align: center;
-        color: gray;
+        color: #f1f1f1;
         font-size: 14px;
-        background-color: rgba(255, 255, 255, 0.8);
-        padding: 6px 0;
-        border-top: 1px solid #ccc;
-        backdrop-filter: blur(5px);
+        background: rgba(40, 40, 40, 0.9);
+        padding: 8px 0;
+        border-top: 1px solid #555;
+        backdrop-filter: blur(6px);
+        box-shadow: 0 -2px 6px rgba(0,0,0,0.5);
         z-index: 9999;
+    }
+    .assinatura-fixed b {
+        color: #ff66b2;
     }
     </style>
     <div class="assinatura-fixed">
         🧠 Criado por: <b>Felipe Castro</b> — 23/10/2025
     </div>
     """,
-    unsafe_allow_html=True
-)
-
+    unsafe_allow_htm
