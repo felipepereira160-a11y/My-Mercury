@@ -608,7 +608,7 @@ st.markdown(
     }
     </style>
     <div class="assinatura-fixed">
-        🧠 Criado por: <b>Felipe Castro</b> — 23/10/2025
+        🧠 Created by: <b>Felipe Castro</b> — 10/2025
     </div>
     """,
     unsafe_allow_html=True
