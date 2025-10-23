@@ -583,3 +583,30 @@ Nunca diga que é um modelo de linguagem genérico. Mantenha a personalidade de 
 
     with st.chat_message("assistant"):
         st.markdown(resposta_final)
+
+        # --- Assinatura fixa no rodapé ---
+st.markdown(
+    """
+    <style>
+    .assinatura-fixed {
+        position: fixed;
+        bottom: 10px;
+        left: 0;
+        width: 100%;
+        text-align: center;
+        color: gray;
+        font-size: 14px;
+        background-color: rgba(255, 255, 255, 0.8);
+        padding: 6px 0;
+        border-top: 1px solid #ccc;
+        backdrop-filter: blur(5px);
+        z-index: 9999;
+    }
+    </style>
+    <div class="assinatura-fixed">
+        🧠 Criado por: <b>Felipe Castro</b> — 23/10/2025
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
