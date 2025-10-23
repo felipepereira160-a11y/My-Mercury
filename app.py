@@ -11,8 +11,8 @@ from datetime import datetime
 # CONFIGURAÇÃO DA PÁGINA
 # ------------------------------------------------------------
 st.set_page_config(page_title="Seu Assistente de Dados com IA", page_icon="🧠", layout="wide")
-st.title("🧠 Mercúrio IA")
-st.write("Faça o upload de seus arquivos na barra lateral!")
+st.title("🧠 Mercúrio")
+st.write(" ← Faça o upload de seus arquivos na barra lateral!")
 
 # ------------------------------------------------------------
 # CHAVE DE API
