@@ -585,8 +585,7 @@ Nunca diga que é um modelo de linguagem genérico. Mantenha a personalidade de 
         st.markdown(resposta_final)
 
        # --- Assinatura fixa no rodapé (modo escuro aprimorado) ---
-st.markdown(
-    """
+    
     <style>
     .assinatura-fixed {
         position: fixed;
