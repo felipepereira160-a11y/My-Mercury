@@ -584,8 +584,9 @@ Nunca diga que é um modelo de linguagem genérico. Mantenha a personalidade de 
     with st.chat_message("assistant"):
         st.markdown(resposta_final)
 
-       # --- Assinatura fixa no rodapé (modo escuro aprimorado) ---
-    
+    # --- Assinatura fixa no rodapé (modo escuro aprimorado) ---
+st.markdown(
+    """
     <style>
     .assinatura-fixed {
         position: fixed;
@@ -610,4 +611,5 @@ Nunca diga que é um modelo de linguagem genérico. Mantenha a personalidade de 
         🧠 Criado por: <b>Felipe Castro</b> — 23/10/2025
     </div>
     """,
-    unsafe_allow_htm
+    unsafe_allow_html=True
+)
