@@ -135,47 +135,86 @@ def detectar_tipo_pergunta(texto):
 # BARRA LATERAL - UPLOADS
 # ------------------------------------------------------------
 with st.sidebar:
-    st.header("Base de Conhecimento")
+    # --- Estilo visual da barra lateral ---
+st.markdown("""
+    <style>
+    [data-testid="stSidebar"] {
+        background-color: #1e1e1e;
+        padding: 1rem;
+    }
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+        color: #ff66b2;
+    }
+    [data-testid="stSidebar"] .stFileUploader {
+        background-color: #2b2b2b;
+        padding: 10px;
+        border-radius: 10px;
+        margin-bottom: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.25);
+    }
+    [data-testid="stSidebar"] .stFileUploader:hover {
+        background-color: #333333;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+with st.sidebar:
+    st.header("📦 Base de Conhecimento")
     tipos_permitidos = ["csv", "xlsx", "xls"]
 
-    data_file = st.file_uploader("1. 📊 Upload Pesquisa de O.S (OS)", type=tipos_permitidos)
-    if data_file:
-        try:
-            st.session_state.df_dados = carregar_dataframe(data_file, separador_padrao=';')
-            st.success("Agendamentos carregados!")
-        except Exception as e:
-            st.error(f"Erro nos dados: {e}")
+    with st.expander("📂 Uploads de Bases de Dados", expanded=True):
+        data_file = st.file_uploader("1️⃣ Pesquisa de O.S (OS)", type=tipos_permitidos)
+        if data_file:
+            try:
+                st.session_state.df_dados = carregar_dataframe(data_file, separador_padrao=';')
+                st.success("Base de OS carregada!")
+            except Exception as e:
+                st.error(f"Erro na Base de OS: {e}")
 
-    st.markdown("---")
-    map_file = st.file_uploader("2. 🌍 Upload do Mapeamento de RT (Fixo)", type=tipos_permitidos)
-    if map_file:
-        try:
-            st.session_state.df_mapeamento = carregar_dataframe(map_file, separador_padrao=',')
-            st.success("Mapeamento carregado!")
-        except Exception as e:
-            st.error(f"Erro no mapeamento: {e}")
+        map_file = st.file_uploader("2️⃣ Mapeamento de RT (Fixo)", type=tipos_permitidos)
+        if map_file:
+            try:
+                st.session_state.df_mapeamento = carregar_dataframe(map_file, separador_padrao=',')
+                st.success("Base de Mapeamento carregada!")
+            except Exception as e:
+                st.error(f"Erro no Mapeamento: {e}")
 
-    st.markdown("---")
-    devolucao_file = st.file_uploader("3. 📥 Upload de Itens a Instalar (Devolução)", type=tipos_permitidos)
-    if devolucao_file:
-        try:
-            st.session_state.df_devolucao = carregar_dataframe(devolucao_file, separador_padrao=';')
-            st.success("Base de devolução carregada!")
-        except Exception as e:
-            st.error(f"Erro na base de devolução: {e}")
+        devolucao_file = st.file_uploader("3️⃣ Itens a Instalar (Devolução)", type=tipos_permitidos)
+        if devolucao_file:
+            try:
+                st.session_state.df_devolucao = carregar_dataframe(devolucao_file, separador_padrao=';')
+                st.success("Base de Devolução carregada!")
+            except Exception as e:
+                st.error(f"Erro na Base de Devolução: {e}")
 
-    st.markdown("---")
-    pagamento_file = st.file_uploader("4. 💵 Upload da Base de Pagamento (Duplicidade)", type=tipos_permitidos)
-    if pagamento_file:
-        try:
-            st.session_state.df_pagamento = carregar_dataframe(pagamento_file, separador_padrao=';')
-            st.success("Base de pagamento carregada!")
-        except Exception as e:
-            st.error(f"Erro na base de pagamento: {e}")
+        pagamento_file = st.file_uploader("4️⃣ Base de Pagamento (Duplicidade)", type=tipos_permitidos)
+        if pagamento_file:
+            try:
+                st.session_state.df_pagamento = carregar_dataframe(pagamento_file, separador_padrao=';')
+                st.success("Base de Pagamento carregada!")
+            except Exception as e:
+                st.error(f"Erro na Base de Pagamento: {e}")
 
-    if st.button("Limpar Tudo"):
+        ativos_file = st.file_uploader("5️⃣ Base de Ativos", type=tipos_permitidos)
+        if ativos_file:
+            try:
+                df_ativos = carregar_dataframe(ativos_file, separador_padrao=';')
+
+                # --- Filtrar clientes indesejados ---
+                termos_excluidos = ['ceabs', 'fca chrysler']
+                col_cliente = next((c for c in df_ativos.columns if 'cliente' in c.lower() and 'id' not in c.lower()), None)
+                if col_cliente:
+                    df_ativos = df_ativos[~df_ativos[col_cliente].str.lower().str.contains('|'.join(termos_excluidos), na=False)]
+
+                st.session_state.df_ativos = df_ativos
+                st.success("Base de Ativos carregada e filtrada com sucesso! ✅")
+            except Exception as e:
+                st.error(f"Erro na Base de Ativos: {e}")
+
+    if st.button("🧹 Limpar Tudo"):
         st.session_state.clear()
         st.rerun()
+
 
 # ------------------------------------------------------------
 # CORPO PRINCIPAL
