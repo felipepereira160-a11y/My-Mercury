@@ -520,7 +520,7 @@ st.markdown(
     """
     <div style='text-align: center; margin-top: -10px; margin-bottom: 20px;'>
         <hr style='margin-top: 10px; margin-bottom: 10px; border: none; border-top: 1px solid #666;'/>
-        <p style='font-size: 14px; color: gray;'>🧠 Criado por: <b>Felipe Castro</b> — 23/10/2025</p>
+        <p style='font-size: 14px; color: gray;'>🧠 Created by: <b>Felipe Castro</b> — V3.0 - 23/10/2025</p>
     </div>
     """,
     unsafe_allow_html=True
