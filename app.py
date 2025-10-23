@@ -11,8 +11,8 @@ from datetime import datetime
 # CONFIGURAÇÃO DA PÁGINA
 # ------------------------------------------------------------
 st.set_page_config(page_title="Seu Assistente de Dados com IA", page_icon="🧠", layout="wide")
-st.title("🧠 Mercúrio")
-st.write(" ← Faça o upload de seus arquivos na barra lateral!")
+st.title("🧠 Mercúrio IA")
+st.write("Faça o upload de seus arquivos na barra lateral!")
 
 # ------------------------------------------------------------
 # CHAVE DE API
@@ -131,83 +131,51 @@ def detectar_tipo_pergunta(texto):
     ]
     return "dados" if any(p in texto for p in palavras_chave_dados) else "geral"
 
+# ------------------------------------------------------------
+# BARRA LATERAL - UPLOADS
+# ------------------------------------------------------------
 with st.sidebar:
-    # --- Estilo visual da barra lateral ---
-    st.markdown("""
-        <style>
-        [data-testid="stSidebar"] {
-            background-color: #1e1e1e;
-            padding: 1rem;
-        }
-        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
-            color: #ff66b2;
-        }
-        [data-testid="stSidebar"] .stFileUploader {
-            background-color: #2b2b2b;
-            padding: 10px;
-            border-radius: 10px;
-            margin-bottom: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.25);
-        }
-        [data-testid="stSidebar"] .stFileUploader:hover {
-            background-color: #333333;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
-    st.header("📦 Base de Conhecimento")
+    st.header("Base de Conhecimento")
     tipos_permitidos = ["csv", "xlsx", "xls"]
 
-    with st.expander("📂 Uploads de Bases de Dados", expanded=True):
-        data_file = st.file_uploader("1️⃣ Pesquisa de O.S (OS)", type=tipos_permitidos)
-        if data_file:
-            try:
-                st.session_state.df_dados = carregar_dataframe(data_file, separador_padrao=';')
-                st.success("Base de OS carregada!")
-            except Exception as e:
-                st.error(f"Erro na Base de OS: {e}")
+    data_file = st.file_uploader("1. 📊 Upload Pesquisa de O.S (OS)", type=tipos_permitidos)
+    if data_file:
+        try:
+            st.session_state.df_dados = carregar_dataframe(data_file, separador_padrao=';')
+            st.success("Agendamentos carregados!")
+        except Exception as e:
+            st.error(f"Erro nos dados: {e}")
 
-        map_file = st.file_uploader("2️⃣ Mapeamento de RT (Fixo)", type=tipos_permitidos)
-        if map_file:
-            try:
-                st.session_state.df_mapeamento = carregar_dataframe(map_file, separador_padrao=',')
-                st.success("Base de Mapeamento carregada!")
-            except Exception as e:
-                st.error(f"Erro no Mapeamento: {e}")
+    st.markdown("---")
+    map_file = st.file_uploader("2. 🌍 Upload do Mapeamento de RT (Fixo)", type=tipos_permitidos)
+    if map_file:
+        try:
+            st.session_state.df_mapeamento = carregar_dataframe(map_file, separador_padrao=',')
+            st.success("Mapeamento carregado!")
+        except Exception as e:
+            st.error(f"Erro no mapeamento: {e}")
 
-        devolucao_file = st.file_uploader("3️⃣ Itens a Instalar (Devolução)", type=tipos_permitidos)
-        if devolucao_file:
-            try:
-                st.session_state.df_devolucao = carregar_dataframe(devolucao_file, separador_padrao=';')
-                st.success("Base de Devolução carregada!")
-            except Exception as e:
-                st.error(f"Erro na Base de Devolução: {e}")
+    st.markdown("---")
+    devolucao_file = st.file_uploader("3. 📥 Upload de Itens a Instalar (Devolução)", type=tipos_permitidos)
+    if devolucao_file:
+        try:
+            st.session_state.df_devolucao = carregar_dataframe(devolucao_file, separador_padrao=';')
+            st.success("Base de devolução carregada!")
+        except Exception as e:
+            st.error(f"Erro na base de devolução: {e}")
 
-        pagamento_file = st.file_uploader("4️⃣ Base de Pagamento (Duplicidade)", type=tipos_permitidos)
-        if pagamento_file:
-            try:
-                st.session_state.df_pagamento = carregar_dataframe(pagamento_file, separador_padrao=';')
-                st.success("Base de Pagamento carregada!")
-            except Exception as e:
-                st.error(f"Erro na Base de Pagamento: {e}")
+    st.markdown("---")
+    pagamento_file = st.file_uploader("4. 💵 Upload da Base de Pagamento (Duplicidade)", type=tipos_permitidos)
+    if pagamento_file:
+        try:
+            st.session_state.df_pagamento = carregar_dataframe(pagamento_file, separador_padrao=';')
+            st.success("Base de pagamento carregada!")
+        except Exception as e:
+            st.error(f"Erro na base de pagamento: {e}")
 
-        ativos_file = st.file_uploader("5️⃣ Base de Ativos", type=tipos_permitidos)
-        if ativos_file:
-            try:
-                df_ativos = carregar_dataframe(ativos_file, separador_padrao=';')
-                termos_excluidos = ['ceabs', 'fca chrysler']
-                col_cliente = next((c for c in df_ativos.columns if 'cliente' in c.lower() and 'id' not in c.lower()), None)
-                if col_cliente:
-                    df_ativos = df_ativos[~df_ativos[col_cliente].str.lower().str.contains('|'.join(termos_excluidos), na=False)]
-                st.session_state.df_ativos = df_ativos
-                st.success("Base de Ativos carregada e filtrada com sucesso! ✅")
-            except Exception as e:
-                st.error(f"Erro na Base de Ativos: {e}")
-
-    if st.button("🧹 Limpar Tudo"):
+    if st.button("Limpar Tudo"):
         st.session_state.clear()
         st.rerun()
-
 
 # ------------------------------------------------------------
 # CORPO PRINCIPAL
@@ -546,18 +514,7 @@ if st.session_state.df_dados is not None and st.session_state.df_mapeamento is n
 
 # --- SEÇÃO DO CHAT DE IA (Mercúrio) – unificação com análise de dados ---
 st.markdown("---")
-st.header("💬 Converse com o Mercúrio")
-# --- Assinatura visível ---
-st.markdown(
-    """
-    <div style='text-align: center; margin-top: -10px; margin-bottom: 20px;'>
-        <hr style='margin-top: 10px; margin-bottom: 10px; border: none; border-top: 1px solid #666;'/>
-        <p style='font-size: 14px; color: gray;'>🧠 Created by: <b>Felipe Castro</b> — V3.0 - 23/10/2025</p>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
+st.header("💬 Converse com a IA (Mercúrio)")
 
 # Exibe histórico do chat
 for message in st.session_state.display_history:
@@ -615,33 +572,3 @@ Nunca diga que é um modelo de linguagem genérico. Mantenha a personalidade de 
 
     with st.chat_message("assistant"):
         st.markdown(resposta_final)
-
-    # --- Assinatura fixa no rodapé (modo escuro aprimorado) ---
-st.markdown(
-    """
-    <style>
-    .assinatura-fixed {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        width: 100%;
-        text-align: center;
-        color: #f1f1f1;
-        font-size: 14px;
-        background: rgba(40, 40, 40, 0.9);
-        padding: 8px 0;
-        border-top: 1px solid #555;
-        backdrop-filter: blur(6px);
-        box-shadow: 0 -2px 6px rgba(0,0,0,0.5);
-        z-index: 9999;
-    }
-    .assinatura-fixed b {
-        color: #ff66b2;
-    }
-    </style>
-    <div class="assinatura-fixed">
-        🧠 Created by: <b>Felipe Castro</b> — 10/2025
-    </div>
-    """,
-    unsafe_allow_html=True
-)
