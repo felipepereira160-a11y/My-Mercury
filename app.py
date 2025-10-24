@@ -573,20 +573,21 @@ Nunca diga que é um modelo de linguagem genérico. Mantenha a personalidade de 
     with st.chat_message("assistant"):
         st.markdown(resposta_final)
 
-    st.markdown(
+   # --- RODAPÉ FIXO ESTILOSO ---
+st.markdown(
     """
     <style>
     .footer {
         position: fixed;
         bottom: 0;
         width: 100%;
-        background-color: #1e1e1e;  /* cor escura combinando com o tema */
-        color: #f0f0f0;             /* texto claro */
+        background-color: rgba(30,30,30,0.95);  /* fundo escuro com leve transparência */
+        color: #f0f0f0;
         text-align: center;
         padding: 12px 0;
         font-size: 14px;
-        border-top: 1px solid #444; /* separador sutil */
-        box-shadow: 0 -2px 5px rgba(0,0,0,0.3); /* sombra leve */
+        border-top: 1px solid #444;
+        box-shadow: 0 -2px 5px rgba(0,0,0,0.3);
         display: flex;
         justify-content: center;
         align-items: center;
