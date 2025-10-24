@@ -531,7 +531,7 @@ if prompt := st.chat_input("Envie uma pergunta ou mensagem..."):
 
     # --- DETECÇÃO DE PERGUNTA SOBRE O DESENVOLVEDOR ---
     prompt_lower = prompt.lower()
-    if any(p in prompt_lower for p in ["quem criou você", "quem te desenvolveu", "quem te fez", "quem é seu criador"]):
+    if any(p in prompt_lower for p in ["quem criou você", "Quem desenvolveu você?", "quem te desenvolveu", "quem te fez", "quem é seu criador"]):
         resposta_final = "Fui desenvolvido pelo Felipe Castro.🚀"
     else:
         tipo = detectar_tipo_pergunta(prompt)
