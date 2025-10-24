@@ -584,12 +584,12 @@ st.markdown(
         background-color: rgba(30,30,30,0.95);
         color: #f0f0f0;
         text-align: left;
-        padding: 12px 20px;  /* espaço à esquerda */
+        padding: 12px 0 12px 250px;  /* 250px da borda esquerda */
         font-size: 14px;
         border-top: 1px solid #444;
         box-shadow: 0 -2px 5px rgba(0,0,0,0.3);
         display: flex;
-        justify-content: flex-start; /* move o conteúdo para a esquerda */
+        justify-content: flex-start;
         align-items: center;
         z-index: 100;
     }
