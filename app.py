@@ -573,8 +573,8 @@ Nunca diga que é um modelo de linguagem genérico. Mantenha a personalidade de 
     with st.chat_message("assistant"):
         st.markdown(resposta_final)
 
-        # ------------------------------------------------------------
-# RODAPÉ FIXO NA PARTE INFERIOR
+      # ------------------------------------------------------------
+# RODAPÉ FIXO ESTILOSO PARA TEMA ESCURO
 # ------------------------------------------------------------
 st.markdown(
     """
@@ -583,12 +583,13 @@ st.markdown(
         position: fixed;
         bottom: 0;
         width: 100%;
-        background-color: #f0f2f6;
-        color: #333;
+        background-color: #1e1e1e;  /* cor escura combinando com o tema */
+        color: #f0f0f0;             /* texto claro */
         text-align: center;
-        padding: 10px 0;
+        padding: 12px 0;
         font-size: 14px;
-        border-top: 1px solid #ddd;
+        border-top: 1px solid #444; /* separador sutil */
+        box-shadow: 0 -2px 5px rgba(0,0,0,0.3); /* sombra leve */
         z-index: 100;
     }
     </style>
@@ -598,4 +599,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
