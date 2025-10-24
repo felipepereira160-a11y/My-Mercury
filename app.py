@@ -581,15 +581,15 @@ st.markdown(
         position: fixed;
         bottom: 0;
         width: 100%;
-        background-color: rgba(30,30,30,0.95);  /* fundo escuro com leve transparência */
+        background-color: rgba(30,30,30,0.95);
         color: #f0f0f0;
-        text-align: center;
-        padding: 12px 0;
+        text-align: left;
+        padding: 12px 20px;  /* espaço à esquerda */
         font-size: 14px;
         border-top: 1px solid #444;
         box-shadow: 0 -2px 5px rgba(0,0,0,0.3);
         display: flex;
-        justify-content: center;
+        justify-content: flex-start; /* move o conteúdo para a esquerda */
         align-items: center;
         z-index: 100;
     }
