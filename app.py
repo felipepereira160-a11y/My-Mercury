@@ -572,3 +572,30 @@ Nunca diga que é um modelo de linguagem genérico. Mantenha a personalidade de 
 
     with st.chat_message("assistant"):
         st.markdown(resposta_final)
+
+        # ------------------------------------------------------------
+# RODAPÉ FIXO NA PARTE INFERIOR
+# ------------------------------------------------------------
+st.markdown(
+    """
+    <style>
+    .footer {
+        position: fixed;
+        bottom: 0;
+        width: 100%;
+        background-color: #f0f2f6;
+        color: #333;
+        text-align: center;
+        padding: 10px 0;
+        font-size: 14px;
+        border-top: 1px solid #ddd;
+        z-index: 100;
+    }
+    </style>
+    <div class="footer">
+        Desenvolvido por Felipe Castro 🚀
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
