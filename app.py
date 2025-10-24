@@ -573,10 +573,7 @@ Nunca diga que é um modelo de linguagem genérico. Mantenha a personalidade de 
     with st.chat_message("assistant"):
         st.markdown(resposta_final)
 
-      # ------------------------------------------------------------
-# RODAPÉ FIXO ESTILOSO PARA TEMA ESCURO
-# ------------------------------------------------------------
-st.markdown(
+    st.markdown(
     """
     <style>
     .footer {
@@ -590,6 +587,9 @@ st.markdown(
         font-size: 14px;
         border-top: 1px solid #444; /* separador sutil */
         box-shadow: 0 -2px 5px rgba(0,0,0,0.3); /* sombra leve */
+        display: flex;
+        justify-content: center;
+        align-items: center;
         z-index: 100;
     }
     </style>
